@@ -17,7 +17,6 @@ package terraformutils
 import (
 	"bytes"
 	"log"
-	"sync"
 
 	"github.com/GoogleCloudPlatform/terraformer/terraformutils/providerwrapper"
 
@@ -65,94 +64,19 @@ func PrintTfState(resources []Resource) ([]byte, error) {
 	return buf.Bytes(), err
 }
 
-func RefreshResources(resources []*Resource, provider *providerwrapper.ProviderWrapper, slowProcessingResources [][]*Resource) ([]*Resource, error) {
-	refreshedResources := []*Resource{}
-	input := make(chan *Resource, len(resources))
-	var wg sync.WaitGroup
-	poolSize := 15
-	for i := range resources {
-		wg.Add(1)
-		input <- resources[i]
-	}
-	close(input)
-
-	for i := 0; i < poolSize; i++ {
-		go RefreshResourceWorker(input, &wg, provider)
-	}
-
-	spInputs := []chan *Resource{}
-	for i, resourceGroup := range slowProcessingResources {
-		spInputs = append(spInputs, make(chan *Resource, len(resourceGroup)))
-		for j := range resourceGroup {
-			spInputs[i] <- resourceGroup[j]
-		}
-		close(spInputs[i])
-	}
-
-	for i := 0; i < len(spInputs); i++ {
-		wg.Add(len(slowProcessingResources[i]))
-		go RefreshResourceWorker(spInputs[i], &wg, provider)
-	}
-
-	wg.Wait()
-	for _, r := range resources {
-		if r.InstanceState != nil && r.InstanceState.ID != "" {
-			refreshedResources = append(refreshedResources, r)
-		} else {
-			log.Printf("ERROR: Unable to refresh resource %s", r.ResourceName)
-		}
-	}
-
-	for _, resourceGroup := range slowProcessingResources {
-		for i := range resourceGroup {
-			r := resourceGroup[i]
-			if r.InstanceState != nil && r.InstanceState.ID != "" {
-				refreshedResources = append(refreshedResources, r)
-			} else {
-				log.Printf("ERROR: Unable to refresh resource %s", r.ResourceName)
-			}
-		}
-	}
-	return refreshedResources, nil
-}
-
 func RefreshResourcesByProvider(providersMapping *ProvidersMapping, providerWrapper *providerwrapper.ProviderWrapper) error {
 	allResources := providersMapping.ShuffleResources()
-	slowProcessingResources := make(map[ProviderGenerator][]*Resource)
-	regularResources := []*Resource{}
-	for i := range allResources {
-		resource := allResources[i]
-		if resource.SlowQueryRequired {
-			provider := providersMapping.MatchProvider(resource)
-			if slowProcessingResources[provider] == nil {
-				slowProcessingResources[provider] = []*Resource{}
-			}
-			slowProcessingResources[provider] = append(slowProcessingResources[provider], resource)
-		} else {
-			regularResources = append(regularResources, resource)
-		}
-	}
 
-	var spResourcesList [][]*Resource
-	for p := range slowProcessingResources {
-		spResourcesList = append(spResourcesList, slowProcessingResources[p])
-	}
-
-	refreshedResources, err := RefreshResources(regularResources, providerWrapper, spResourcesList)
+	// State refresh is done in bulk via generated `import` blocks + a single
+	// CLI apply + `show -json` (see bulk_import.go), replacing the old
+	// per-resource go-plugin gRPC refresh.
+	refreshedResources, err := bulkImportResources(providerWrapper, allResources)
 	if err != nil {
 		return err
 	}
 
 	providersMapping.SetResources(refreshedResources)
 	return nil
-}
-
-func RefreshResourceWorker(input chan *Resource, wg *sync.WaitGroup, provider *providerwrapper.ProviderWrapper) {
-	for r := range input {
-		log.Println("Refreshing state...", r.InstanceInfo.Id)
-		r.Refresh(provider)
-		wg.Done()
-	}
 }
 
 func IgnoreKeys(resourcesTypes []string, p *providerwrapper.ProviderWrapper) map[string][]string {
