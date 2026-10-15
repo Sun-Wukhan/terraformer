@@ -256,8 +256,8 @@ func TestShowStatePipeline(t *testing.T) {
 			if r.InstanceState == nil {
 				t.Fatal("InstanceState not populated")
 			}
-			if r.InstanceState.ID != "vpc-0123456789abcdef0" {
-				t.Errorf("ID = %q, want original import ID preserved", r.InstanceState.ID)
+			if r.InstanceState.ID != "test" {
+				t.Errorf("ID = %q, want id attribute from state", r.InstanceState.ID)
 			}
 			if got := r.InstanceState.Attributes["cidr_block"]; got != "test" {
 				t.Errorf("cidr_block = %q, want %q", got, "test")
