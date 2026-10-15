@@ -56,12 +56,21 @@ type blockJSON struct {
 }
 
 type attributeJSON struct {
-	Type        interface{} `json:"type"`
-	Description string      `json:"description"`
-	Required    bool        `json:"required"`
-	Optional    bool        `json:"optional"`
-	Computed    bool        `json:"computed"`
-	Sensitive   bool        `json:"sensitive"`
+	Type        interface{}   `json:"type"`
+	NestedType  *nestedTypeJSON `json:"nested_type"`
+	Description string        `json:"description"`
+	Required    bool          `json:"required"`
+	Optional    bool          `json:"optional"`
+	Computed    bool          `json:"computed"`
+	Sensitive   bool          `json:"sensitive"`
+}
+
+// nestedTypeJSON is the schema shape for protocol-6 nested attributes
+// (terraform-plugin-framework SingleNestedAttribute etc.): the attribute
+// carries nested_type instead of a type expression.
+type nestedTypeJSON struct {
+	Attributes  map[string]attributeJSON `json:"attributes"`
+	NestingMode string                   `json:"nesting_mode"`
 }
 
 type blockTypeJSON struct {
@@ -137,9 +146,9 @@ func convertBlockJSON(b blockJSON) (*configschema.Block, error) {
 		BlockTypes: make(map[string]*configschema.NestedBlock, len(b.BlockTypes)),
 	}
 	for name, a := range b.Attributes {
-		ty, err := parseTypeExpr(a.Type)
+		ty, err := convertAttributeType(name, a)
 		if err != nil {
-			return nil, fmt.Errorf("attribute %q: %w", name, err)
+			return nil, err
 		}
 		out.Attributes[name] = &configschema.Attribute{
 			Type:        ty,
@@ -178,6 +187,49 @@ func convertBlockJSON(b blockJSON) (*configschema.Block, error) {
 		}
 	}
 	return out, nil
+}
+
+// convertAttributeType resolves an attribute's cty.Type from either a type
+// expression or a protocol-6 nested_type object.
+func convertAttributeType(name string, a attributeJSON) (cty.Type, error) {
+	if a.NestedType != nil {
+		ty, err := convertNestedTypeJSON(a.NestedType)
+		if err != nil {
+			return cty.NilType, fmt.Errorf("attribute %q: %w", name, err)
+		}
+		return ty, nil
+	}
+	ty, err := parseTypeExpr(a.Type)
+	if err != nil {
+		return cty.NilType, fmt.Errorf("attribute %q: %w", name, err)
+	}
+	return ty, nil
+}
+
+// convertNestedTypeJSON synthesizes the cty.Type for a nested_type attribute:
+// a single object, or a list/set/map of objects for the other nesting modes.
+func convertNestedTypeJSON(nt *nestedTypeJSON) (cty.Type, error) {
+	attrTypes := make(map[string]cty.Type, len(nt.Attributes))
+	for name, a := range nt.Attributes {
+		ty, err := convertAttributeType(name, a)
+		if err != nil {
+			return cty.NilType, err
+		}
+		attrTypes[name] = ty
+	}
+	obj := cty.Object(attrTypes)
+	switch nt.NestingMode {
+	case "single":
+		return obj, nil
+	case "list":
+		return cty.List(obj), nil
+	case "set":
+		return cty.Set(obj), nil
+	case "map":
+		return cty.Map(obj), nil
+	default:
+		return cty.NilType, fmt.Errorf("unknown nested_type nesting mode %q", nt.NestingMode)
+	}
 }
 
 // parseTypeExpr parses a Terraform type expression as it appears in

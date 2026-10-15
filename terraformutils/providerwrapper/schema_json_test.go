@@ -217,3 +217,88 @@ func TestParseProvidersSchemaJSON(t *testing.T) {
 		t.Fatalf("expected error for unknown provider type")
 	}
 }
+
+func TestParseProvidersSchemaJSONNestedType(t *testing.T) {
+	// Protocol-6 nested attributes (e.g. kubernetes provider metadata):
+	// the attribute carries nested_type instead of a type expression.
+	doc := `{
+  "format_version": "1.0",
+  "provider_schemas": {
+    "registry.terraform.io/hashicorp/kubernetes": {
+      "provider": {"version": 0, "block": {"attributes": {}, "block_types": {}}},
+      "resource_schemas": {
+        "kubernetes_validating_admission_policy_v1": {
+          "version": 1,
+          "block": {
+            "attributes": {
+              "id": {"type": "string", "computed": true},
+              "metadata": {
+                "nested_type": {
+                  "attributes": {
+                    "annotations": {"type": ["map", "string"], "optional": true},
+                    "name": {"type": "string", "optional": true},
+                    "labels": {
+                      "nested_type": {
+                        "attributes": {"team": {"type": "string", "optional": true}},
+                        "nesting_mode": "single"
+                      },
+                      "optional": true
+                    }
+                  },
+                  "nesting_mode": "single"
+                },
+                "optional": true
+              },
+              "spec": {
+                "nested_type": {
+                  "attributes": {
+                    "replicas": {"type": "number", "optional": true}
+                  },
+                  "nesting_mode": "list"
+                },
+                "optional": true
+              }
+            },
+            "block_types": {}
+          }
+        }
+      },
+      "data_source_schemas": {}
+    }
+  }
+}`
+	resp, err := parseProvidersSchemaJSON([]byte(doc), "kubernetes")
+	if err != nil {
+		t.Fatalf("parseProvidersSchemaJSON: %v", err)
+	}
+	rs, ok := resp.ResourceTypes["kubernetes_validating_admission_policy_v1"]
+	if !ok {
+		t.Fatal("resource type missing")
+	}
+	implied := rs.Block.ImpliedType()
+	attrTypes := implied.AttributeTypes()
+
+	wantMeta := cty.Object(map[string]cty.Type{
+		"annotations": cty.Map(cty.String),
+		"name":        cty.String,
+		"labels": cty.Object(map[string]cty.Type{
+			"team": cty.String,
+		}),
+	})
+	if !attrTypes["metadata"].Equals(wantMeta) {
+		t.Fatalf("metadata = %s, want %s", attrTypes["metadata"].FriendlyName(), wantMeta.FriendlyName())
+	}
+	wantSpec := cty.List(cty.Object(map[string]cty.Type{"replicas": cty.Number}))
+	if !attrTypes["spec"].Equals(wantSpec) {
+		t.Fatalf("spec = %s, want %s", attrTypes["spec"].FriendlyName(), wantSpec.FriendlyName())
+	}
+	if !rs.Block.Attributes["metadata"].Optional {
+		t.Fatal("metadata should be optional")
+	}
+
+	// Unknown nesting mode must fail loudly.
+	bad := nestedTypeJSON{NestingMode: "bogus", Attributes: map[string]attributeJSON{}}
+	if _, err := convertNestedTypeJSON(&bad); err == nil {
+		t.Fatal("expected error for unknown nesting mode")
+	}
+}
