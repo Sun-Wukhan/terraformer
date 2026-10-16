@@ -256,6 +256,8 @@ func TestShowStatePipeline(t *testing.T) {
 			if r.InstanceState == nil {
 				t.Fatal("InstanceState not populated")
 			}
+			// The shim takes the ID from the state's id attribute, exactly
+			// like the old gRPC Refresh path did.
 			if r.InstanceState.ID != "test" {
 				t.Errorf("ID = %q, want id attribute from state", r.InstanceState.ID)
 			}
