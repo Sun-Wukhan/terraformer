@@ -418,17 +418,28 @@ func (p *ProviderWrapper) detectProviderVersion() {
 		return
 	}
 	var v struct {
-		ProviderSelections map[string]struct {
-			Version string `json:"version"`
-		} `json:"provider_selections"`
+		ProviderSelections map[string]json.RawMessage `json:"provider_selections"`
 	}
 	if err := json.Unmarshal(out, &v); err != nil {
 		log.Printf("WARN: unable to parse version -json output: %v", err)
 		return
 	}
-	for key, sel := range v.ProviderSelections {
-		if strings.HasSuffix(key, "/"+p.source) {
-			providerVersionCache.Store(p.providerName, "~> "+sel.Version)
+	for key, raw := range v.ProviderSelections {
+		if !strings.HasSuffix(key, "/"+p.source) {
+			continue
+		}
+		// Modern CLI format: "registry.terraform.io/hashicorp/aws": "6.68.0".
+		var ver string
+		if err := json.Unmarshal(raw, &ver); err == nil && ver != "" {
+			providerVersionCache.Store(p.providerName, "~> "+ver)
+			return
+		}
+		// Older CLI format: "registry.terraform.io/hashicorp/aws": {"version": "6.68.0"}.
+		var obj struct {
+			Version string `json:"version"`
+		}
+		if err := json.Unmarshal(raw, &obj); err == nil && obj.Version != "" {
+			providerVersionCache.Store(p.providerName, "~> "+obj.Version)
 			return
 		}
 	}
