@@ -1,5 +1,6 @@
-# Terraformer
+> **Note:** This is a community-maintained continuation of the archived [GoogleCloudPlatform/terraformer](https://github.com/GoogleCloudPlatform/terraformer), revived with support for modern Terraform and OpenTofu CLIs. See [REVIVAL_ROADMAP.md](REVIVAL_ROADMAP.md) for the plan.
 
+# Terraformer
 [![tests](https://github.com/GoogleCloudPlatform/terraformer/actions/workflows/test.yml/badge.svg)](https://github.com/GoogleCloudPlatform/terraformer/actions/workflows/test.yml)
 [![linter](https://github.com/GoogleCloudPlatform/terraformer/actions/workflows/linter.yml/badge.svg)](https://github.com/GoogleCloudPlatform/terraformer/actions/workflows/linter.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/GoogleCloudPlatform/terraformer)](https://goreportcard.com/report/github.com/GoogleCloudPlatform/terraformer)
