@@ -6,9 +6,27 @@
 [![AUR package](https://img.shields.io/aur/version/terraformer)](https://aur.archlinux.org/packages/terraformer/)
 [![Homebrew](https://img.shields.io/badge/dynamic/json.svg?url=https://formulae.brew.sh/api/formula/terraformer.json&query=$.versions.stable&label=homebrew)](https://formulae.brew.sh/formula/terraformer)
 
-**This project is no longer maintained and is deprecated.**
+**Revived fork.** This is a community revival of the archived
+[GoogleCloudPlatform/terraformer](https://github.com/GoogleCloudPlatform/terraformer)
+(archived March 16, 2026). The original project is unmaintained; this fork
+picks up where it left off.
 
-As of March 16, 2026, this repository has been archived. It is now read-only, and no further updates, security patches, or support will be provided.
+What changed in the revival:
+*   The provider communication layer no longer uses Terraform 0.12's go-plugin
+    gRPC internals (which could not talk to modern provider binaries). It now
+    shells out to a modern Terraform or OpenTofu CLI, so it works with the
+    latest provider releases (including provider protocol 6).
+*   Provider binaries are auto-installed via `<cli> init` — no more
+    hand-placed provider plugins.
+*   State refresh is done in bulk with generated `import` blocks + `apply` +
+    `show -json` instead of per-resource gRPC calls.
+
+Prerequisites:
+*   `terraform >= 1.5` or `tofu` (OpenTofu) on your `PATH`
+    (override with the `TERRAFORMER_TF_BIN` environment variable).
+*   The `github.com/hashicorp/terraform v0.12.31` module remains in `go.mod`
+    as a types-only dependency (schema/state types); none of its runtime or
+    plugin code is used anymore.
 
 A CLI tool that generates `tf`/`json` and `tfstate` files based on existing infrastructure
 (reverse Terraform).

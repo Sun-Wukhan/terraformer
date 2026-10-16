@@ -14,27 +14,50 @@
 
 package providerwrapper //nolint
 
+// Architecture.
+//
+// This package used to drive provider binaries over go-plugin gRPC using the
+// internals of Terraform 0.12 (github.com/hashicorp/terraform v0.12.31). That
+// client only speaks provider protocol 4/5, so it cannot communicate with
+// modern provider releases (protocol 6), and it forced users to hand-install
+// provider binaries.
+//
+// It now shells out to a modern Terraform (>= 1.5) or OpenTofu CLI instead:
+//   - NewProviderWrapper creates an isolated temp working directory, writes a
+//     minimal versions.tf / provider.tf, and runs `<cli> init`, which
+//     auto-installs the provider from the public registry.
+//   - Provider schemas come from `<cli> providers schema -json`, converted by
+//     schema_json.go into the 0.12 providers.GetSchemaResponse type that the
+//     rest of terraformer consumes.
+//   - Per-resource state refresh is done in bulk by the terraformutils package
+//     via generated `import` blocks + `<cli> apply` + `<cli> show -json`.
+//
+// The github.com/hashicorp/terraform v0.12.31 module is therefore kept in
+// go.mod as a TYPES-ONLY dependency (configs/configschema, providers). None
+// of its runtime/plugin code is used anymore.
+
 import (
+	"bytes"
+	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/GoogleCloudPlatform/terraformer/terraformutils/terraformerstring"
 
+	"github.com/hashicorp/hcl/v2/hclwrite"
 	"github.com/zclconf/go-cty/cty"
 
-	"github.com/hashicorp/go-hclog"
-	"github.com/hashicorp/go-plugin"
 	"github.com/hashicorp/terraform/configs/configschema"
-	tfplugin "github.com/hashicorp/terraform/plugin"
 	"github.com/hashicorp/terraform/providers"
-	"github.com/hashicorp/terraform/terraform"
-	"github.com/hashicorp/terraform/version"
 )
 
 // DefaultDataDir is the default directory for storing local data.
@@ -48,52 +71,134 @@ const DefaultPluginVendorDirV12 = "terraform.d/plugins/" + pluginMachineName
 // pluginMachineName is the directory name used in new plugin paths.
 const pluginMachineName = runtime.GOOS + "_" + runtime.GOARCH
 
+// cliTimeouts for the various CLI invocations.
+const (
+	cliInitTimeout    = 10 * time.Minute
+	cliSchemaTimeout  = 5 * time.Minute
+	cliVersionTimeout = 1 * time.Minute
+)
+
+// providerVersionCache remembers the installed provider version per
+// terraformer provider name, populated by NewProviderWrapper after a
+// successful init. GetProviderVersion serves it without re-running the CLI.
+var providerVersionCache sync.Map // map[string]string
+
 type ProviderWrapper struct {
-	Provider     *tfplugin.GRPCProvider
-	client       *plugin.Client
-	rpcClient    plugin.ClientProtocol
 	providerName string
-	config       cty.Value
+	tfType       string // terraform provider type, e.g. "aws"
+	source       string // registry source address, e.g. "hashicorp/aws"
+	cliBin       string // resolved terraform/tofu binary
+	workDir      string // isolated temp working directory
 	schema       *providers.GetSchemaResponse
 	retryCount   int
 	retrySleepMs int
+	verbose      bool
+}
+
+// resolveCLIBin finds the terraform/tofu CLI to drive: the TERRAFORMER_TF_BIN
+// environment override wins, then `terraform` on PATH, then `tofu` on PATH.
+func resolveCLIBin() (string, error) {
+	if bin := os.Getenv("TERRAFORMER_TF_BIN"); bin != "" {
+		resolved, err := exec.LookPath(bin)
+		if err != nil {
+			return "", fmt.Errorf("TERRAFORMER_TF_BIN=%q: %w", bin, err)
+		}
+		return resolved, nil
+	}
+	if bin, err := exec.LookPath("terraform"); err == nil {
+		return bin, nil
+	}
+	if bin, err := exec.LookPath("tofu"); err == nil {
+		return bin, nil
+	}
+	return "", errors.New("no terraform (>= 1.5) or tofu binary found on PATH; install Terraform >= 1.5 or OpenTofu, or set TERRAFORMER_TF_BIN to the CLI binary path")
 }
 
 func NewProviderWrapper(providerName string, providerConfig cty.Value, verbose bool, options ...map[string]int) (*ProviderWrapper, error) {
-	p := &ProviderWrapper{retryCount: 5, retrySleepMs: 300}
+	p := &ProviderWrapper{retryCount: 5, retrySleepMs: 300, verbose: verbose}
 	p.providerName = providerName
-	p.config = providerConfig
 
 	if len(options) > 0 {
-		retryCount, hasOption := options[0]["retryCount"]
-		if hasOption {
-			p.retryCount = retryCount
+		if v, ok := options[0]["retryCount"]; ok {
+			p.retryCount = v
 		}
-		retrySleepMs, hasOption := options[0]["retrySleepMs"]
-		if hasOption {
-			p.retrySleepMs = retrySleepMs
+		if v, ok := options[0]["retrySleepMs"]; ok {
+			p.retrySleepMs = v
 		}
 	}
 
-	err := p.initProvider(verbose)
+	cliBin, err := resolveCLIBin()
+	if err != nil {
+		return nil, err
+	}
+	p.cliBin = cliBin
+	p.warnIfOldCLI()
 
-	return p, err
+	source, tfType, err := lookupProviderSource(providerName)
+	if err != nil {
+		return nil, err
+	}
+	p.source = source
+	p.tfType = tfType
+
+	workDir, err := os.MkdirTemp("", "terraformer-")
+	if err != nil {
+		return nil, fmt.Errorf("creating temp working directory: %w", err)
+	}
+	p.workDir = workDir
+	// Clean up the temp dir if any of the setup steps below fail.
+	failed := true
+	defer func() {
+		if failed {
+			os.RemoveAll(workDir)
+		}
+	}()
+
+	if err := p.writeVersionsTF(); err != nil {
+		return nil, err
+	}
+	if err := p.writeProviderTF(providerConfig); err != nil {
+		return nil, err
+	}
+
+	// Auto-install the provider from the registry. No more hand-placed
+	// provider binaries.
+	if _, err := p.runCLI(cliInitTimeout, "init", "-input=false", "-no-color"); err != nil {
+		return nil, fmt.Errorf("provider auto-install failed: %w", err)
+	}
+
+	schemaOut, err := p.runCLI(cliSchemaTimeout, "providers", "schema", "-json", "-no-color")
+	if err != nil {
+		return nil, fmt.Errorf("fetching provider schema: %w", err)
+	}
+	schema, err := parseProvidersSchemaJSON(schemaOut, tfType)
+	if err != nil {
+		return nil, err
+	}
+	p.schema = schema
+
+	p.detectProviderVersion()
+
+	failed = false
+	return p, nil
 }
 
+// Kill removes the wrapper's isolated working directory.
 func (p *ProviderWrapper) Kill() {
-	p.client.Kill()
+	if p.workDir != "" {
+		os.RemoveAll(p.workDir)
+	}
 }
 
 func (p *ProviderWrapper) GetSchema() *providers.GetSchemaResponse {
-	if p.schema == nil {
-		r := p.Provider.GetSchema()
-		p.schema = &r
-	}
 	return p.schema
 }
 
 func (p *ProviderWrapper) GetReadOnlyAttributes(resourceTypes []string) (map[string][]string, error) {
 	r := p.GetSchema()
+	if r == nil {
+		return nil, errors.New("provider schema not initialized")
+	}
 
 	if r.Diagnostics.HasErrors() {
 		return nil, r.Diagnostics.Err()
@@ -157,103 +262,222 @@ func (p *ProviderWrapper) readObjBlocks(block map[string]*configschema.NestedBlo
 	return readOnlyAttributes
 }
 
-func (p *ProviderWrapper) Refresh(info *terraform.InstanceInfo, state *terraform.InstanceState) (*terraform.InstanceState, error) {
-	schema := p.GetSchema()
-	impliedType := schema.ResourceTypes[info.Type].Block.ImpliedType()
-	priorState, err := state.AttrsAsObjectValue(impliedType)
+// --- CLI execution helpers ---
+
+// runCLI executes the configured terraform/tofu binary with args in the
+// wrapper's working directory, inheriting the caller's environment (cloud
+// credentials live there) plus CHECKPOINT_DISABLE=1. Stdout is returned;
+// on failure the error carries stdout and stderr for diagnosis.
+func (p *ProviderWrapper) runCLI(timeout time.Duration, args ...string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, p.cliBin, args...)
+	cmd.Dir = p.workDir
+	cmd.Env = append(os.Environ(), "CHECKPOINT_DISABLE=1")
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if p.verbose {
+		log.Printf("[DEBUG] exec: %s %s (dir=%s)", p.cliBin, strings.Join(args, " "), p.workDir)
+	}
+	err := cmd.Run()
+	if ctx.Err() == context.DeadlineExceeded {
+		return nil, fmt.Errorf("%s %s timed out after %s\nstdout: %s\nstderr: %s",
+			p.cliBin, strings.Join(args, " "), timeout, stdout.String(), stderr.String())
+	}
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%s %s failed: %w\nstdout: %s\nstderr: %s",
+			p.cliBin, strings.Join(args, " "), err, stdout.String(), stderr.String())
 	}
-	successReadResource := false
-	resp := providers.ReadResourceResponse{}
-	for i := 0; i < p.retryCount; i++ {
-		resp = p.Provider.ReadResource(providers.ReadResourceRequest{
-			TypeName:   info.Type,
-			PriorState: priorState,
-			Private:    []byte{},
-		})
-		if resp.Diagnostics.HasErrors() {
-			log.Println(resp.Diagnostics.Err())
-			log.Printf("WARN: Fail read resource from provider, wait %dms before retry\n", p.retrySleepMs)
-			time.Sleep(time.Duration(p.retrySleepMs) * time.Millisecond)
-			continue
-		} else {
-			successReadResource = true
-			break
-		}
-	}
-
-	if !successReadResource {
-		log.Println("Fail read resource from provider, trying import command")
-		// retry with regular import command - without resource attributes
-		importResponse := p.Provider.ImportResourceState(providers.ImportResourceStateRequest{
-			TypeName: info.Type,
-			ID:       state.ID,
-		})
-		if importResponse.Diagnostics.HasErrors() {
-			return nil, resp.Diagnostics.Err()
-		}
-		if len(importResponse.ImportedResources) == 0 {
-			return nil, errors.New("not able to import resource for a given ID")
-		}
-		return terraform.NewInstanceStateShimmedFromValue(importResponse.ImportedResources[0].State, int(schema.ResourceTypes[info.Type].Version)), nil
-	}
-
-	if resp.NewState.IsNull() {
-		msg := fmt.Sprintf("ERROR: Read resource response is null for resource %s", info.Id)
-		return nil, errors.New(msg)
-	}
-
-	return terraform.NewInstanceStateShimmedFromValue(resp.NewState, int(schema.ResourceTypes[info.Type].Version)), nil
+	return stdout.Bytes(), nil
 }
 
-func (p *ProviderWrapper) initProvider(verbose bool) error {
-	providerFilePath, err := getProviderFileName(p.providerName)
-	if err != nil {
-		return err
-	}
-	options := hclog.LoggerOptions{
-		Name:   "plugin",
-		Level:  hclog.Error,
-		Output: os.Stdout,
-	}
-	if verbose {
-		options.Level = hclog.Trace
-	}
-	logger := hclog.New(&options)
-	p.client = plugin.NewClient(
-		&plugin.ClientConfig{
-			Cmd:              exec.Command(providerFilePath),
-			HandshakeConfig:  tfplugin.Handshake,
-			VersionedPlugins: tfplugin.VersionedPlugins,
-			Managed:          true,
-			Logger:           logger,
-			AllowedProtocols: []plugin.Protocol{plugin.ProtocolGRPC},
-			AutoMTLS:         true,
-		})
-	p.rpcClient, err = p.client.Client()
-	if err != nil {
-		return err
-	}
-	raw, err := p.rpcClient.Dispense(tfplugin.ProviderPluginName)
-	if err != nil {
-		return err
-	}
+// RunCLI is the exported form of runCLI for the bulk import orchestration in
+// the terraformutils package (which cannot be imported here without creating
+// an import cycle).
+func (p *ProviderWrapper) RunCLI(timeout time.Duration, args ...string) ([]byte, error) {
+	return p.runCLI(timeout, args...)
+}
 
-	p.Provider = raw.(*tfplugin.GRPCProvider)
+// WorkDir returns the wrapper's isolated working directory.
+func (p *ProviderWrapper) WorkDir() string {
+	return p.workDir
+}
 
-	config, err := p.GetSchema().Provider.Block.CoerceValue(p.config)
-	if err != nil {
-		return err
+// CLIBin returns the resolved terraform/tofu binary path.
+func (p *ProviderWrapper) CLIBin() string {
+	return p.cliBin
+}
+
+// GetRetryCount returns the configured number of retries for CLI operations.
+func (p *ProviderWrapper) GetRetryCount() int {
+	return p.retryCount
+}
+
+// GetRetrySleepMs returns the configured sleep between CLI retries in milliseconds.
+func (p *ProviderWrapper) GetRetrySleepMs() int {
+	return p.retrySleepMs
+}
+
+// --- working directory setup ---
+
+func (p *ProviderWrapper) writeVersionsTF() error {
+	content := fmt.Sprintf(`terraform {
+  required_providers {
+    %s = {
+      source = "%s"
+    }
+  }
+}
+`, p.tfType, p.source)
+	if err := os.WriteFile(filepath.Join(p.workDir, "versions.tf"), []byte(content), 0644); err != nil {
+		return fmt.Errorf("writing versions.tf: %w", err)
 	}
-	p.Provider.Configure(providers.ConfigureRequest{
-		TerraformVersion: version.Version,
-		Config:           config,
-	})
-
 	return nil
 }
 
+// writeProviderTF renders the provider configuration (a flat cty object of
+// primitives produced by each provider's GetConfig) as a provider block. A
+// null or non-object config means "no explicit provider configuration" and no
+// file is written; the CLI then falls back to environment variables and
+// default credential chains, exactly as before.
+func (p *ProviderWrapper) writeProviderTF(config cty.Value) error {
+	if config.IsNull() {
+		return nil
+	}
+	if !config.Type().IsObjectType() {
+		log.Printf("WARN: provider config is not an object (type %s), skipping provider.tf generation", config.Type().FriendlyName())
+		return nil
+	}
+	f := hclwrite.NewEmptyFile()
+	body := f.Body()
+	providerBlock := body.AppendNewBlock("provider", []string{p.tfType})
+	pBody := providerBlock.Body()
+	wrote := false
+	for name, val := range config.AsValueMap() {
+		if val.IsNull() {
+			continue
+		}
+		pBody.SetAttributeValue(name, val)
+		wrote = true
+	}
+	if !wrote {
+		return nil
+	}
+	if err := os.WriteFile(filepath.Join(p.workDir, "provider.tf"), f.Bytes(), 0644); err != nil {
+		return fmt.Errorf("writing provider.tf: %w", err)
+	}
+	return nil
+}
+
+// warnIfOldCLI logs a warning when the resolved CLI is older than 1.5, the
+// minimum version supporting the `import` blocks used for bulk refresh.
+func (p *ProviderWrapper) warnIfOldCLI() {
+	ctx, cancel := context.WithTimeout(context.Background(), cliVersionTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, p.cliBin, "version", "-json")
+	cmd.Env = append(os.Environ(), "CHECKPOINT_DISABLE=1")
+	out, err := cmd.Output()
+	if err != nil {
+		return
+	}
+	var v struct {
+		TerraformVersion string `json:"terraform_version"`
+		TofuVersion      string `json:"tofu_version"`
+	}
+	if err := json.Unmarshal(out, &v); err != nil {
+		return
+	}
+	verStr := v.TerraformVersion
+	if verStr == "" {
+		verStr = v.TofuVersion
+	}
+	parts := strings.SplitN(verStr, ".", 3)
+	if len(parts) < 2 {
+		return
+	}
+	var major, minor int
+	if _, err := fmt.Sscanf(parts[0], "%d", &major); err != nil {
+		return
+	}
+	if _, err := fmt.Sscanf(parts[1], "%d", &minor); err != nil {
+		return
+	}
+	if major < 1 || (major == 1 && minor < 5) {
+		log.Printf("WARN: %s version %s is older than 1.5; import blocks require terraform >= 1.5 or a recent tofu", p.cliBin, verStr)
+	}
+}
+
+// detectProviderVersion records the installed provider version (from
+// `<cli> version -json` provider_selections) so GetProviderVersion can serve
+// it without re-running the CLI.
+func (p *ProviderWrapper) detectProviderVersion() {
+	out, err := p.runCLI(cliVersionTimeout, "version", "-json", "-no-color")
+	if err != nil {
+		log.Printf("WARN: unable to detect provider version: %v", err)
+		return
+	}
+	var v struct {
+		ProviderSelections map[string]json.RawMessage `json:"provider_selections"`
+	}
+	if err := json.Unmarshal(out, &v); err != nil {
+		log.Printf("WARN: unable to parse version -json output: %v", err)
+		return
+	}
+	for key, raw := range v.ProviderSelections {
+		if !strings.HasSuffix(key, "/"+p.source) {
+			continue
+		}
+		// Modern CLI format: "registry.terraform.io/hashicorp/aws": "6.68.0".
+		var ver string
+		if err := json.Unmarshal(raw, &ver); err == nil && ver != "" {
+			providerVersionCache.Store(p.providerName, "~> "+ver)
+			return
+		}
+		// Older CLI format: "registry.terraform.io/hashicorp/aws": {"version": "6.68.0"}.
+		var obj struct {
+			Version string `json:"version"`
+		}
+		if err := json.Unmarshal(raw, &obj); err == nil && obj.Version != "" {
+			providerVersionCache.Store(p.providerName, "~> "+obj.Version)
+			return
+		}
+	}
+	log.Printf("WARN: provider %q not found in version -json provider_selections", p.source)
+}
+
+func GetProviderVersion(providerName string) string {
+	if v, ok := providerVersionCache.Load(providerName); ok {
+		if s, ok := v.(string); ok {
+			return s
+		}
+	}
+	// Fallback: legacy filename-based discovery, for code paths where no
+	// ProviderWrapper was ever constructed.
+	return getProviderVersionFromFileName(providerName)
+}
+
+func getProviderVersionFromFileName(providerName string) string {
+	providerFilePath, err := getProviderFileName(providerName)
+	if err != nil {
+		log.Println("Can't find provider file path. Ensure that you are following https://www.terraform.io/docs/configuration/providers.html#third-party-plugins.")
+		return ""
+	}
+	t := strings.Split(providerFilePath, string(os.PathSeparator))
+	providerFileName := t[len(t)-1]
+	providerFileNameParts := strings.Split(providerFileName, "_")
+	if len(providerFileNameParts) < 2 {
+		log.Println("Can't find provider version. Ensure that you are following https://www.terraform.io/docs/configuration/providers.html#plugin-names-and-versions.")
+		return ""
+	}
+	providerVersion := providerFileNameParts[1]
+	return "~> " + strings.TrimPrefix(providerVersion, "v")
+}
+
+// getProviderFileName and friends are the legacy provider-binary discovery
+// helpers. They are no longer used to initialize providers (init now
+// auto-installs via the CLI); they remain only as the GetProviderVersion
+// fallback above.
 func getProviderFileName(providerName string) (string, error) {
 	defaultDataDir := os.Getenv("TF_DATA_DIR")
 	if defaultDataDir == "" {
@@ -337,21 +561,4 @@ func getProviderFileNameV12(providerName string) (string, error) {
 		}
 	}
 	return providerFilePath, nil
-}
-
-func GetProviderVersion(providerName string) string {
-	providerFilePath, err := getProviderFileName(providerName)
-	if err != nil {
-		log.Println("Can't find provider file path. Ensure that you are following https://www.terraform.io/docs/configuration/providers.html#third-party-plugins.")
-		return ""
-	}
-	t := strings.Split(providerFilePath, string(os.PathSeparator))
-	providerFileName := t[len(t)-1]
-	providerFileNameParts := strings.Split(providerFileName, "_")
-	if len(providerFileNameParts) < 2 {
-		log.Println("Can't find provider version. Ensure that you are following https://www.terraform.io/docs/configuration/providers.html#plugin-names-and-versions.")
-		return ""
-	}
-	providerVersion := providerFileNameParts[1]
-	return "~> " + strings.TrimPrefix(providerVersion, "v")
 }

@@ -16,10 +16,8 @@ package terraformutils
 
 import (
 	"fmt"
-	"log"
 	"regexp"
 	"strings"
-	"time"
 
 	"github.com/GoogleCloudPlatform/terraformer/terraformutils/providerwrapper"
 	"github.com/hashicorp/terraform/terraform"
@@ -120,17 +118,6 @@ func NewSimpleResource(id, resourceName, resourceType, provider string, allowEmp
 		allowEmptyValues,
 		map[string]interface{}{},
 	)
-}
-
-func (r *Resource) Refresh(provider *providerwrapper.ProviderWrapper) {
-	var err error
-	if r.SlowQueryRequired {
-		time.Sleep(200 * time.Millisecond)
-	}
-	r.InstanceState, err = provider.Refresh(r.InstanceInfo, r.InstanceState)
-	if err != nil {
-		log.Println(err)
-	}
 }
 
 func (r Resource) GetIDKey() string {
