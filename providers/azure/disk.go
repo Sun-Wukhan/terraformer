@@ -18,55 +18,52 @@ import (
 	"context"
 	"log"
 
-	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2019-07-01/compute"
-	"github.com/Azure/go-autorest/autorest"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
 	"github.com/GoogleCloudPlatform/terraformer/terraformutils"
-	"github.com/hashicorp/go-azure-helpers/authentication"
 )
 
 type DiskGenerator struct {
 	AzureService
 }
 
-func (g DiskGenerator) createResources(diskListIterator compute.DiskListIterator) ([]terraformutils.Resource, error) {
-	var resources []terraformutils.Resource
-	for diskListIterator.NotDone() {
-		disk := diskListIterator.Value()
-		resources = append(resources, terraformutils.NewSimpleResource(
+func (g *DiskGenerator) appendResources(disks []*armcompute.Disk) {
+	for _, disk := range disks {
+		g.Resources = append(g.Resources, terraformutils.NewSimpleResource(
 			*disk.ID,
 			*disk.Name,
 			"azurerm_managed_disk",
 			"azurerm",
 			[]string{}))
-		if err := diskListIterator.Next(); err != nil {
-			log.Println(err)
-			return resources, err
-		}
 	}
-	return resources, nil
 }
 
 func (g *DiskGenerator) InitResources() error {
 	ctx := context.Background()
-	resourceManagerEndpoint := g.Args["config"].(authentication.Config).CustomResourceManagerEndpoint
-	subscriptionID := g.Args["config"].(authentication.Config).SubscriptionID
-	disksClient := compute.NewDisksClientWithBaseURI(resourceManagerEndpoint, subscriptionID)
-
-	disksClient.Authorizer = g.Args["authorizer"].(autorest.Authorizer)
-
-	var (
-		output compute.DiskListIterator
-		err    error
-	)
-
-	if rg := g.Args["resource_group"].(string); rg != "" {
-		output, err = disksClient.ListByResourceGroupComplete(ctx, rg)
-	} else {
-		output, err = disksClient.ListComplete(ctx)
-	}
+	client, err := armcompute.NewDisksClient(g.getSubscriptionID(), g.getCredential(), g.armClientOptions())
 	if err != nil {
 		return err
 	}
-	g.Resources, err = g.createResources(output)
-	return err
+
+	if rg := g.getResourceGroup(); rg != "" {
+		pager := client.NewListByResourceGroupPager(rg, nil)
+		for pager.More() {
+			page, err := pager.NextPage(ctx)
+			if err != nil {
+				log.Println(err)
+				return err
+			}
+			g.appendResources(page.Value)
+		}
+	} else {
+		pager := client.NewListPager(nil)
+		for pager.More() {
+			page, err := pager.NextPage(ctx)
+			if err != nil {
+				log.Println(err)
+				return err
+			}
+			g.appendResources(page.Value)
+		}
+	}
+	return nil
 }

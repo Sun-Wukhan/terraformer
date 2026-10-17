@@ -21,6 +21,8 @@ import (
 	"os"
 	"strings"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/go-autorest/autorest"
 	"github.com/hashicorp/go-azure-helpers/authentication"
 	"github.com/hashicorp/go-azure-helpers/sender"
@@ -34,6 +36,7 @@ type AzureProvider struct { //nolint
 	terraformutils.Provider
 	config        authentication.Config
 	authorizer    autorest.Authorizer
+	credential    azcore.TokenCredential
 	resourceGroup string
 }
 
@@ -128,9 +131,49 @@ func (p *AzureProvider) Init(args []string) error {
 		return err
 	}
 	p.authorizer = authorizer
+
+	credential, err := p.getCredential()
+	if err != nil {
+		return err
+	}
+	p.credential = credential
+
 	p.resourceGroup = args[0]
 
 	return nil
+}
+
+// getCredential builds the track-2 token credential used by migrated services.
+// azidentity's DefaultAzureCredential understands AZURE_* env vars, so the
+// ARM_* vars terraformer has always used are mapped across. This preserves
+// the service-principal, client-certificate, managed-identity and Azure CLI
+// flows; the GitHub-OIDC (ARM_OIDC_*) flow has no azidentity equivalent and
+// is not carried over.
+func (p *AzureProvider) getCredential() (azcore.TokenCredential, error) {
+	if v := os.Getenv("ARM_CLIENT_ID"); v != "" {
+		_ = os.Setenv("AZURE_CLIENT_ID", v)
+	}
+	if v := os.Getenv("ARM_TENANT_ID"); v != "" {
+		_ = os.Setenv("AZURE_TENANT_ID", v)
+	}
+	if v := os.Getenv("ARM_CLIENT_SECRET"); v != "" {
+		_ = os.Setenv("AZURE_CLIENT_SECRET", v)
+	}
+	if v := os.Getenv("ARM_CLIENT_CERTIFICATE_PATH"); v != "" {
+		_ = os.Setenv("AZURE_CLIENT_CERTIFICATE_PATH", v)
+	}
+	if v := os.Getenv("ARM_CLIENT_CERTIFICATE_PASSWORD"); v != "" {
+		_ = os.Setenv("AZURE_CLIENT_CERTIFICATE_PASSWORD", v)
+	}
+	cred, err := azidentity.NewDefaultAzureCredential(&azidentity.DefaultAzureCredentialOptions{
+		ClientOptions: azcore.ClientOptions{
+			Cloud: azureCloudConfig(p.config.CustomResourceManagerEndpoint),
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	return cred, nil
 }
 
 func (p *AzureProvider) GetName() string {
@@ -399,6 +442,7 @@ func (p *AzureProvider) InitService(serviceName string, verbose bool) error {
 	p.Service.SetArgs(map[string]interface{}{
 		"config":         p.config,
 		"authorizer":     p.authorizer,
+		"credential":     p.credential,
 		"resource_group": p.resourceGroup,
 	})
 	return nil

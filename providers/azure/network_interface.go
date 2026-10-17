@@ -18,53 +18,51 @@ import (
 	"context"
 	"log"
 
-	"github.com/Azure/azure-sdk-for-go/services/network/mgmt/2019-08-01/network"
-	"github.com/Azure/go-autorest/autorest"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/GoogleCloudPlatform/terraformer/terraformutils"
-	"github.com/hashicorp/go-azure-helpers/authentication"
 )
 
 type NetworkInterfaceGenerator struct {
 	AzureService
 }
 
-func (g NetworkInterfaceGenerator) createResources(interfaceListResult network.InterfaceListResultIterator) ([]terraformutils.Resource, error) {
-	var resources []terraformutils.Resource
-	for interfaceListResult.NotDone() {
-		networkInterface := interfaceListResult.Value()
-		resources = append(resources, terraformutils.NewSimpleResource(
+func (g *NetworkInterfaceGenerator) appendResources(interfaces []*armnetwork.Interface) {
+	for _, networkInterface := range interfaces {
+		g.Resources = append(g.Resources, terraformutils.NewSimpleResource(
 			*networkInterface.ID,
 			*networkInterface.Name,
 			"azurerm_network_interface",
 			"azurerm",
 			[]string{}))
-		if err := interfaceListResult.Next(); err != nil {
-			log.Println(err)
-			return resources, err
-		}
 	}
-	return resources, nil
 }
 
 func (g *NetworkInterfaceGenerator) InitResources() error {
 	ctx := context.Background()
-	subscriptionID := g.Args["config"].(authentication.Config).SubscriptionID
-	resourceManagerEndpoint := g.Args["config"].(authentication.Config).CustomResourceManagerEndpoint
-	interfacesClient := network.NewInterfacesClientWithBaseURI(resourceManagerEndpoint, subscriptionID)
-
-	interfacesClient.Authorizer = g.Args["authorizer"].(autorest.Authorizer)
-	var (
-		output network.InterfaceListResultIterator
-		err    error
-	)
-	if rg := g.Args["resource_group"].(string); rg != "" {
-		output, err = interfacesClient.ListComplete(ctx, rg)
-	} else {
-		output, err = interfacesClient.ListAllComplete(ctx)
-	}
+	client, err := armnetwork.NewInterfacesClient(g.getSubscriptionID(), g.getCredential(), g.armClientOptions())
 	if err != nil {
 		return err
 	}
-	g.Resources, err = g.createResources(output)
-	return err
+	if rg := g.getResourceGroup(); rg != "" {
+		pager := client.NewListPager(rg, nil)
+		for pager.More() {
+			page, err := pager.NextPage(ctx)
+			if err != nil {
+				log.Println(err)
+				return err
+			}
+			g.appendResources(page.Value)
+		}
+	} else {
+		pager := client.NewListAllPager(nil)
+		for pager.More() {
+			page, err := pager.NextPage(ctx)
+			if err != nil {
+				log.Println(err)
+				return err
+			}
+			g.appendResources(page.Value)
+		}
+	}
+	return nil
 }

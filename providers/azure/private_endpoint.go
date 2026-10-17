@@ -18,76 +18,80 @@ import (
 	"context"
 	"log"
 
-	"github.com/Azure/azure-sdk-for-go/services/network/mgmt/2021-02-01/network"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 )
 
 type PrivateEndpointGenerator struct {
 	AzureService
 }
 
-func (az *PrivateEndpointGenerator) listServices() ([]network.PrivateLinkService, error) {
-	subscriptionID, resourceGroup, authorizer, resourceManagerEndpoint := az.getClientArgs()
-	client := network.NewPrivateLinkServicesClientWithBaseURI(resourceManagerEndpoint, subscriptionID)
-	client.Authorizer = authorizer
-	var (
-		iterator network.PrivateLinkServiceListResultIterator
-		err      error
-	)
+func (az *PrivateEndpointGenerator) listServices() ([]*armnetwork.PrivateLinkService, error) {
 	ctx := context.Background()
-	if resourceGroup != "" {
-		iterator, err = client.ListComplete(ctx, resourceGroup)
-	} else {
-		iterator, err = client.ListBySubscriptionComplete(ctx)
-	}
+	client, err := armnetwork.NewPrivateLinkServicesClient(az.getSubscriptionID(), az.getCredential(), az.armClientOptions())
 	if err != nil {
 		return nil, err
 	}
-	var resources []network.PrivateLinkService
-	for iterator.NotDone() {
-		item := iterator.Value()
-		resources = append(resources, item)
-		if err := iterator.NextWithContext(ctx); err != nil {
-			log.Println(err)
-			return resources, err
+	var resources []*armnetwork.PrivateLinkService
+	if rg := az.getResourceGroup(); rg != "" {
+		pager := client.NewListPager(rg, nil)
+		for pager.More() {
+			page, err := pager.NextPage(ctx)
+			if err != nil {
+				log.Println(err)
+				return resources, err
+			}
+			resources = append(resources, page.Value...)
+		}
+	} else {
+		pager := client.NewListBySubscriptionPager(nil)
+		for pager.More() {
+			page, err := pager.NextPage(ctx)
+			if err != nil {
+				log.Println(err)
+				return resources, err
+			}
+			resources = append(resources, page.Value...)
 		}
 	}
 	return resources, nil
 }
 
-func (az *PrivateEndpointGenerator) AppendServices(link *network.PrivateLinkService) {
+func (az *PrivateEndpointGenerator) AppendServices(link *armnetwork.PrivateLinkService) {
 	az.AppendSimpleResource(*link.ID, *link.Name, "azurerm_private_link_service")
 }
 
-func (az *PrivateEndpointGenerator) listEndpoints() ([]network.PrivateEndpoint, error) {
-	subscriptionID, resourceGroup, authorizer, resourceManagerEndpoint := az.getClientArgs()
-	client := network.NewPrivateEndpointsClientWithBaseURI(resourceManagerEndpoint, subscriptionID)
-	client.Authorizer = authorizer
-	var (
-		iterator network.PrivateEndpointListResultIterator
-		err      error
-	)
+func (az *PrivateEndpointGenerator) listEndpoints() ([]*armnetwork.PrivateEndpoint, error) {
 	ctx := context.Background()
-	if resourceGroup != "" {
-		iterator, err = client.ListComplete(ctx, resourceGroup)
-	} else {
-		iterator, err = client.ListBySubscriptionComplete(ctx)
-	}
+	client, err := armnetwork.NewPrivateEndpointsClient(az.getSubscriptionID(), az.getCredential(), az.armClientOptions())
 	if err != nil {
 		return nil, err
 	}
-	var resources []network.PrivateEndpoint
-	for iterator.NotDone() {
-		item := iterator.Value()
-		resources = append(resources, item)
-		if err := iterator.NextWithContext(ctx); err != nil {
-			log.Println(err)
-			return resources, err
+	var resources []*armnetwork.PrivateEndpoint
+	if rg := az.getResourceGroup(); rg != "" {
+		pager := client.NewListPager(rg, nil)
+		for pager.More() {
+			page, err := pager.NextPage(ctx)
+			if err != nil {
+				log.Println(err)
+				return resources, err
+			}
+			resources = append(resources, page.Value...)
+		}
+	} else {
+		pager := client.NewListBySubscriptionPager(nil)
+		for pager.More() {
+			page, err := pager.NextPage(ctx)
+			if err != nil {
+				log.Println(err)
+				return resources, err
+			}
+			resources = append(resources, page.Value...)
 		}
 	}
 	return resources, nil
 }
 
-func (az *PrivateEndpointGenerator) AppendEndpoint(link *network.PrivateEndpoint) {
+func (az *PrivateEndpointGenerator) AppendEndpoint(link *armnetwork.PrivateEndpoint) {
 	az.AppendSimpleResource(*link.ID, *link.Name, "azurerm_private_endpoint")
 }
 
@@ -98,14 +102,14 @@ func (az *PrivateEndpointGenerator) InitResources() error {
 		return err
 	}
 	for _, link := range services {
-		az.AppendServices(&link)
+		az.AppendServices(link)
 	}
 	endpoints, err := az.listEndpoints()
 	if err != nil {
 		return err
 	}
 	for _, endpoint := range endpoints {
-		az.AppendEndpoint(&endpoint)
+		az.AppendEndpoint(endpoint)
 	}
 	return nil
 }
