@@ -1,0 +1,120 @@
+name: ci
+
+# Single CI pipeline with proper stages (jobs), replacing the old
+# one-workflow-per-check layout:
+#   lint        - golangci-lint over the whole repo (fast feedback)
+#   unit        - go build + go test ./... on ubuntu and macos
+#   integration - live terraform/tofu CLI tests, no cloud credentials
+#   azure       - azure provider build/vet/unit tests, credential-free
+#   azure-live  - read-only live Azure smoke test, only with AZURE_* secrets
+
+on:
+  push:
+    branches: [master, 'revive/**']
+  pull_request:
+    branches: [master]
+  schedule:
+    # Mondays 06:00 UTC: re-validates against newly released providers.
+    - cron: '0 6 * * 1'
+
+jobs:
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: golangci-lint
+        uses: reviewdog/action-golangci-lint@v2
+        with:
+          go_version_file: go.mod
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          tool_name: golangci-lint
+          fail_on_error: true
+
+  unit:
+    name: unit tests
+    needs: lint
+    strategy:
+      matrix:
+        platform: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Build
+        run: go build ./...
+      - name: Test
+        run: go test -count=1 ./...
+
+  integration:
+    name: cli integration
+    needs: unit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Install Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: latest
+      - name: Install OpenTofu
+        uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: latest
+      - name: CLI integration tests
+        env:
+          TERRAFORMER_INTEGRATION_TEST: 1
+        run: go test -count=1 -timeout 30m ./terraformutils/...
+
+  azure:
+    name: azure unit
+    needs: unit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Build Azure provider
+        run: go build ./providers/azure/
+      - name: Vet Azure provider
+        run: go vet ./providers/azure/
+      - name: Unit tests (no credentials)
+        run: go test -count=1 -v ./providers/azure/
+
+  azure-live:
+    name: azure live
+    needs: azure
+    runs-on: ubuntu-latest
+    # NOTE: secrets cannot be referenced in `if:` (GitHub rejects the
+    # workflow as invalid). The secret is exposed as a job env var and the
+    # steps gate on it instead; with no AZURE_CLIENT_ID secret the job is a no-op.
+    env:
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        if: ${{ env.AZURE_CLIENT_ID != '' }}
+      - name: Install Go
+        if: ${{ env.AZURE_CLIENT_ID != '' }}
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Live track-2 smoke test
+        if: ${{ env.AZURE_CLIENT_ID != '' }}
+        env:
+          TERRAFORMER_AZURE_LIVE_TEST: 1
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        run: go test -count=1 -timeout 20m -v -run 'TestLive' ./providers/azure/
