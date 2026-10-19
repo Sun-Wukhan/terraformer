@@ -106,7 +106,6 @@ func createResourcesPerSubDomain(api *mgo.API, funcs []func(*mgo.API, int, mgo.V
 	}
 
 	waitChan := getWaitChannel()
-	count := 0
 
 	for {
 		params["page"] = strconv.Itoa(page)
@@ -133,13 +132,12 @@ func createResourcesPerSubDomain(api *mgo.API, funcs []func(*mgo.API, int, mgo.V
 
 			}
 			waitChan <- struct{}{}
-			count++
-			go func(count int, d mgo.Domain) {
+			go func(d mgo.Domain) {
 				if err := createResourcesPerVHost(api, d, funcs, wg); err != nil {
 					log.Println(err)
 				}
 				<-waitChan
-			}(count, d)
+			}(d)
 		}
 		if len(domains) < pageSize {
 			break
@@ -161,7 +159,6 @@ func createResourcesPerVHost(api *mgo.API, domain mgo.Domain, funcs []func(*mgo.
 	}
 
 	waitChan := getWaitChannel()
-	count := 0
 
 	for {
 		params["page"] = strconv.Itoa(page)
@@ -175,13 +172,12 @@ func createResourcesPerVHost(api *mgo.API, domain mgo.Domain, funcs []func(*mgo.
 		for _, v := range vhosts {
 			for _, f := range funcs {
 				waitChan <- struct{}{}
-				count++
-				go func(count int, v mgo.VHost, f func(*mgo.API, int, mgo.VHost, *sync.WaitGroup) error) {
+				go func(v mgo.VHost, f func(*mgo.API, int, mgo.VHost, *sync.WaitGroup) error) {
 					if err := f(api, domain.ID, v, wg); err != nil {
 						log.Println(err)
 					}
 					<-waitChan
-				}(count, v, f)
+				}(v, f)
 			}
 		}
 		if len(vhosts) < pageSize {
