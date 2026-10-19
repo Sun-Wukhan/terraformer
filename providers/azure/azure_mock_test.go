@@ -25,8 +25,12 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/dns/armdns"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storage/armstorage"
+	"github.com/GoogleCloudPlatform/terraformer/terraformutils"
 )
 
 // These tests prove the track-2 migration works with NO Azure credentials and
@@ -131,5 +135,137 @@ func TestMockTrack2VirtualNetworks(t *testing.T) {
 	}
 	if len(tr.urls) == 0 || !strings.Contains(tr.urls[0], "virtualNetworks") {
 		t.Errorf("expected an ARM virtualNetworks call, got %v", tr.urls)
+	}
+}
+
+const mockDisksJSON = `{"value":[
+	{"id":"/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-mock-1/providers/Microsoft.Compute/disks/disk-mock-1","name":"disk-mock-1","location":"eastus","type":"Microsoft.Compute/disks","properties":{}}
+]}`
+
+const mockStorageAccountsJSON = `{"value":[
+	{"id":"/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-mock-1/providers/Microsoft.Storage/storageAccounts/stmock1","name":"stmock1","location":"eastus","type":"Microsoft.Storage/storageAccounts","kind":"StorageV2","sku":{"name":"Standard_LRS"}}
+]}`
+
+const mockNSGsJSON = `{"value":[
+	{"id":"/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-mock-1/providers/Microsoft.Network/networkSecurityGroups/nsg-mock-1","name":"nsg-mock-1","location":"eastus","type":"Microsoft.Network/networkSecurityGroups","properties":{}}
+]}`
+
+const mockDNSZonesJSON = `{"value":[
+	{"id":"/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-mock-1/providers/Microsoft.Network/dnszones/example.com","name":"example.com","type":"Microsoft.Network/dnszones","properties":{}}
+]}`
+
+func TestMockTrack2Disks(t *testing.T) {
+	tr := &cannedTransport{body: mockDisksJSON}
+	client, err := armcompute.NewDisksClient(mockSubscriptionID, stubCredential{}, mockClientOptions(tr))
+	if err != nil {
+		t.Fatalf("client: %v", err)
+	}
+	g := &DiskGenerator{}
+	pager := client.NewListPager(nil)
+	ctx := context.Background()
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			t.Fatalf("next page: %v", err)
+		}
+		g.appendResources(page.Value)
+	}
+	if len(g.Resources) != 1 {
+		t.Fatalf("got %d resources, want 1", len(g.Resources))
+	}
+	if g.Resources[0].ResourceName != "tfer--disk-mock-1" {
+		t.Errorf("name = %q, want tfer--disk-mock-1", g.Resources[0].ResourceName)
+	}
+	if g.Resources[0].InstanceInfo.Type != "azurerm_managed_disk" {
+		t.Errorf("type = %q, want azurerm_managed_disk", g.Resources[0].InstanceInfo.Type)
+	}
+	if len(tr.urls) == 0 || !strings.Contains(tr.urls[0], "disks") {
+		t.Errorf("expected an ARM disks call, got %v", tr.urls)
+	}
+}
+
+func TestMockTrack2StorageAccounts(t *testing.T) {
+	tr := &cannedTransport{body: mockStorageAccountsJSON}
+	client, err := armstorage.NewAccountsClient(mockSubscriptionID, stubCredential{}, mockClientOptions(tr))
+	if err != nil {
+		t.Fatalf("client: %v", err)
+	}
+	pager := client.NewListPager(nil)
+	ctx := context.Background()
+	var resources []terraformutils.Resource
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			t.Fatalf("next page: %v", err)
+		}
+		resources = appendStorageAccounts(resources, page.Value)
+	}
+	if len(resources) != 1 {
+		t.Fatalf("got %d resources, want 1", len(resources))
+	}
+	if resources[0].ResourceName != "tfer--stmock1" {
+		t.Errorf("name = %q, want tfer--stmock1", resources[0].ResourceName)
+	}
+	if resources[0].InstanceInfo.Type != "azurerm_storage_account" {
+		t.Errorf("type = %q, want azurerm_storage_account", resources[0].InstanceInfo.Type)
+	}
+	if len(tr.urls) == 0 || !strings.Contains(tr.urls[0], "storageAccounts") {
+		t.Errorf("expected an ARM storageAccounts call, got %v", tr.urls)
+	}
+}
+
+func TestMockTrack2NetworkSecurityGroups(t *testing.T) {
+	tr := &cannedTransport{body: mockNSGsJSON}
+	client, err := armnetwork.NewSecurityGroupsClient(mockSubscriptionID, stubCredential{}, mockClientOptions(tr))
+	if err != nil {
+		t.Fatalf("client: %v", err)
+	}
+	g := &NetworkSecurityGroupGenerator{}
+	pager := client.NewListAllPager(nil)
+	ctx := context.Background()
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			t.Fatalf("next page: %v", err)
+		}
+		for _, sg := range page.Value {
+			g.appendResource(sg)
+		}
+	}
+	if len(g.Resources) != 1 {
+		t.Fatalf("got %d resources, want 1", len(g.Resources))
+	}
+	if !strings.HasPrefix(g.Resources[0].ResourceName, "tfer--nsg-mock-1") {
+		t.Errorf("name = %q, want prefix tfer--nsg-mock-1", g.Resources[0].ResourceName)
+	}
+	if g.Resources[0].InstanceInfo.Type != "azurerm_network_security_group" {
+		t.Errorf("type = %q, want azurerm_network_security_group", g.Resources[0].InstanceInfo.Type)
+	}
+	if len(tr.urls) == 0 || !strings.Contains(tr.urls[0], "networkSecurityGroups") {
+		t.Errorf("expected an ARM networkSecurityGroups call, got %v", tr.urls)
+	}
+}
+
+func TestMockTrack2DNSZones(t *testing.T) {
+	tr := &cannedTransport{body: mockDNSZonesJSON}
+	client, err := armdns.NewZonesClient(mockSubscriptionID, stubCredential{}, mockClientOptions(tr))
+	if err != nil {
+		t.Fatalf("client: %v", err)
+	}
+	var pageSize int32 = 50
+	pager := client.NewListPager(&armdns.ZonesClientListOptions{Top: &pageSize})
+	ctx := context.Background()
+	if !pager.More() {
+		t.Fatal("expected at least one page")
+	}
+	page, err := pager.NextPage(ctx)
+	if err != nil {
+		t.Fatalf("next page: %v", err)
+	}
+	if len(page.Value) != 1 || *page.Value[0].Name != "example.com" {
+		t.Fatalf("unexpected zones page: %+v", page.Value)
+	}
+	if len(tr.urls) == 0 || !strings.Contains(tr.urls[0], "dnszones") {
+		t.Errorf("expected an ARM dnszones call, got %v", tr.urls)
 	}
 }
