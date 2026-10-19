@@ -14,8 +14,10 @@
 package terraformoutput
 
 import (
+	"fmt"
 	"log"
 	"os"
+	"sort"
 	"strings"
 
 	"github.com/GoogleCloudPlatform/terraformer/terraformutils"
@@ -45,9 +47,18 @@ func OutputHclFiles(resources []terraformutils.Resource, provider terraformutils
 		}},
 	}
 
-	providerDataFile, err := terraformutils.Print(providerData, map[string]struct{}{}, output, sort)
-	if err != nil {
-		return err
+	var providerDataFile []byte
+	var err error
+	if output == "hcl" {
+		// The generic JSON->HCL1 conversion renders nested provider config
+		// maps as extra block labels (e.g. `azurerm "features" {}`), which
+		// is invalid. Render provider.tf with a dedicated modern writer.
+		providerDataFile = printProviderTF(providerData)
+	} else {
+		providerDataFile, err = terraformutils.Print(providerData, map[string]struct{}{}, output, sort)
+		if err != nil {
+			return err
+		}
 	}
 	PrintFile(path+"/provider."+GetFileExtension(output), providerDataFile)
 
@@ -158,4 +169,107 @@ func GetFileExtension(outputFormat string) string {
 		return "tf.json"
 	}
 	return "tf"
+}
+
+// printProviderTF renders provider.tf in modern HCL: a terraform block with
+// required_providers, followed by one provider block per provider with nested
+// maps rendered as nested blocks (never as extra labels).
+func printProviderTF(providerData map[string]interface{}) []byte {
+	var b strings.Builder
+	if tf, ok := providerData["terraform"].(map[string]interface{}); ok {
+		b.WriteString("terraform {\n")
+		if rp, ok := tf["required_providers"].([]map[string]interface{}); ok {
+			// Merge the single-entry maps into one name->config map.
+			merged := map[string]map[string]interface{}{}
+			for _, m := range rp {
+				for name, cfg := range m {
+					if c, ok := cfg.(map[string]interface{}); ok {
+						merged[name] = c
+					}
+				}
+			}
+			names := make([]string, 0, len(merged))
+			for name := range merged {
+				names = append(names, name)
+			}
+			sort.Strings(names)
+			b.WriteString("  required_providers {\n")
+			for _, name := range names {
+				cfg := merged[name]
+				b.WriteString(fmt.Sprintf("    %s = {\n", name))
+				if src, ok := cfg["source"]; ok {
+					b.WriteString(fmt.Sprintf("      source  = %s\n", hclLiteral(src)))
+				}
+				if ver, ok := cfg["version"]; ok {
+					b.WriteString(fmt.Sprintf("      version = %s\n", hclLiteral(ver)))
+				}
+				b.WriteString("    }\n")
+			}
+			b.WriteString("  }\n")
+		}
+		b.WriteString("}\n")
+	}
+	if prov, ok := providerData["provider"].(map[string]interface{}); ok {
+		names := make([]string, 0, len(prov))
+		for name := range prov {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		for _, name := range names {
+			b.WriteString("\n")
+			b.WriteString(fmt.Sprintf("provider %q {\n", name))
+			if cfg, ok := prov[name].(map[string]interface{}); ok {
+				writeHCLBlockBody(&b, cfg, 1)
+			}
+			b.WriteString("}\n")
+		}
+	}
+	return []byte(b.String())
+}
+
+// writeHCLBlockBody renders a config map as HCL attributes and nested blocks.
+func writeHCLBlockBody(b *strings.Builder, m map[string]interface{}, indent int) {
+	pad := strings.Repeat("  ", indent)
+	names := make([]string, 0, len(m))
+	for name := range m {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		switch v := m[name].(type) {
+		case map[string]interface{}:
+			if len(v) == 0 {
+				b.WriteString(fmt.Sprintf("%s%s {}\n", pad, name))
+			} else {
+				b.WriteString(fmt.Sprintf("%s%s {\n", pad, name))
+				writeHCLBlockBody(b, v, indent+1)
+				b.WriteString(fmt.Sprintf("%s}\n", pad))
+			}
+		default:
+			b.WriteString(fmt.Sprintf("%s%s = %s\n", pad, name, hclLiteral(v)))
+		}
+	}
+}
+
+// hclLiteral renders a scalar config value as an HCL literal.
+func hclLiteral(v interface{}) string {
+	switch t := v.(type) {
+	case string:
+		return fmt.Sprintf("%q", t)
+	case bool:
+		if t {
+			return "true"
+		}
+		return "false"
+	case nil:
+		return "null"
+	case []interface{}:
+		parts := make([]string, 0, len(t))
+		for _, e := range t {
+			parts = append(parts, hclLiteral(e))
+		}
+		return "[" + strings.Join(parts, ", ") + "]"
+	default:
+		return fmt.Sprintf("%v", t)
+	}
 }

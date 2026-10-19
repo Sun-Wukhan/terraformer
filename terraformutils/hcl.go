@@ -209,6 +209,9 @@ func hclPrint(data interface{}, mapsObjects map[string]struct{}, sort bool) ([]b
 	formatted = terraform12Adjustments(formatted, mapsObjects)
 	// hack for support terraform 0.13
 	formatted = terraform13Adjustments(formatted)
+	// modernize: "${foo.bar}" -> foo.bar (interpolation-only expressions
+	// are deprecated in modern Terraform; bare traversals are preferred)
+	formatted = stripInterpolationOnly(formatted)
 	if err != nil {
 		log.Println("Invalid HCL follows:")
 		for i, line := range strings.Split(s, "\n") {
@@ -270,6 +273,16 @@ func terraform13Adjustments(formatted []byte) []byte {
 	}
 	s = strings.Join(lines, "\n")
 	return []byte(s)
+}
+
+// interpolationOnlyRe matches a quoted string whose entire content is a
+// single interpolation, e.g. "${aws_vpc.main.id}". Such strings are
+// replaced with the bare traversal (aws_vpc.main.id), the modern form.
+// Strings mixing interpolation with other text are left untouched.
+var interpolationOnlyRe = regexp.MustCompile(`"\$\{([^{}"]+)\}"`)
+
+func stripInterpolationOnly(formatted []byte) []byte {
+	return interpolationOnlyRe.ReplaceAll(formatted, []byte("$1"))
 }
 
 func escapeRune(s string) string {
