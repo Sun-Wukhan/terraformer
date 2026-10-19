@@ -52,3 +52,16 @@ func TestPrintResource(t *testing.T) {
 		t.Errorf("failed to parse data %s", string(data))
 	}
 }
+
+func TestStripInterpolationOnly(t *testing.T) {
+	in := "value = \"${azurerm_resource_group.tfer--rg1.id}\"\n" +
+		"name = \"prefix-${var.foo}-suffix\"\n" +
+		"ref = \"${data.terraform_remote_state.vpc.outputs.vpc_id}\"\n"
+	got := string(stripInterpolationOnly([]byte(in)))
+	want := "value = azurerm_resource_group.tfer--rg1.id\n" +
+		"name = \"prefix-${var.foo}-suffix\"\n" +
+		"ref = data.terraform_remote_state.vpc.outputs.vpc_id\n"
+	if got != want {
+		t.Errorf("stripInterpolationOnly() =\n%s\nwant\n%s", got, want)
+	}
+}
