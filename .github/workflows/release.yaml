@@ -1,3 +1,4 @@
+# Forced re-index: GitHub Actions was not picking up this workflow.
 name: "tagged-release"
 on:
   workflow_dispatch:
