@@ -16,11 +16,11 @@ package aws
 
 import (
 	"context"
-	"github.com/aws/aws-sdk-go-v2/service/opsworks"
-	"github.com/aws/aws-sdk-go-v2/service/opsworks/types"
 	"log"
 
 	"github.com/GoogleCloudPlatform/terraformer/terraformutils"
+	"github.com/aws/aws-sdk-go-v2/service/opsworks"
+	"github.com/aws/aws-sdk-go-v2/service/opsworks/types"
 )
 
 type OpsworksGenerator struct {

@@ -289,7 +289,9 @@ func (g *RealmGenerator) InitResources() error {
 		// Set ContainerId of the roles, for realm = "", for open id clients = "_" + client.ClientId
 		// and get roles resources
 		mapContainerIDs[realm.Realm] = ""
-		roles := append(clientRoles, realmRoles...)
+		roles := make([]*keycloak.Role, 0, len(clientRoles)+len(realmRoles))
+		roles = append(roles, clientRoles...)
+		roles = append(roles, realmRoles...)
 		for _, role := range roles {
 			role.ContainerId = mapContainerIDs[role.ContainerId]
 		}
