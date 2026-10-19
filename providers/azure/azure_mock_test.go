@@ -1,0 +1,135 @@
+// Copyright 2026 The Terraformer Authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package azure
+
+import (
+	"context"
+	"io"
+	"net/http"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+)
+
+// These tests prove the track-2 migration works with NO Azure credentials and
+// NO network: a stub azcore.TokenCredential plus a mock HTTP transport serving
+// canned ARM JSON exercise the real SDK client + pager + resource-mapping code.
+// They run in CI on every push/PR (azure-unit job).
+
+// stubCredential is a fake azcore.TokenCredential: no network, no secrets.
+type stubCredential struct{}
+
+func (stubCredential) GetToken(context.Context, policy.TokenRequestOptions) (azcore.AccessToken, error) {
+	return azcore.AccessToken{Token: "fake-token", ExpiresOn: time.Now().Add(time.Hour)}, nil
+}
+
+// roundTripFunc adapts a func to policy.Transporter (the SDK's HTTP layer).
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) Do(r *http.Request) (*http.Response, error) { return f(r) }
+
+// cannedTransport serves body for every request and records the URLs seen,
+// so tests can assert the SDK actually issued the expected ARM calls.
+type cannedTransport struct {
+	body string
+	urls []string
+}
+
+func (c *cannedTransport) Do(r *http.Request) (*http.Response, error) {
+	c.urls = append(c.urls, r.URL.String())
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(strings.NewReader(c.body)),
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Request:    r,
+	}, nil
+}
+
+func mockClientOptions(tr *cannedTransport) *arm.ClientOptions {
+	return &arm.ClientOptions{
+		ClientOptions: azcore.ClientOptions{Transport: tr},
+	}
+}
+
+const mockSubscriptionID = "00000000-0000-0000-0000-000000000000"
+
+const mockResourceGroupsJSON = `{"value":[
+	{"id":"/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-mock-1","name":"rg-mock-1","location":"eastus","type":"Microsoft.Resources/resourceGroups"},
+	{"id":"/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-mock-2","name":"rg-mock-2","location":"westus","type":"Microsoft.Resources/resourceGroups"}
+]}`
+
+const mockVnetsJSON = `{"value":[
+	{"id":"/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-mock-1/providers/Microsoft.Network/virtualNetworks/vnet-mock-1","name":"vnet-mock-1","location":"eastus","type":"Microsoft.Network/virtualNetworks","properties":{"addressSpace":{"addressPrefixes":["10.0.0.0/16"]}}}
+]}`
+
+func TestMockTrack2ResourceGroups(t *testing.T) {
+	tr := &cannedTransport{body: mockResourceGroupsJSON}
+	client, err := armresources.NewResourceGroupsClient(mockSubscriptionID, stubCredential{}, mockClientOptions(tr))
+	if err != nil {
+		t.Fatalf("client: %v", err)
+	}
+	pager := client.NewListPager(nil)
+	resources := ResourceGroupGenerator{}.createResources(context.Background(), pager)
+	if len(resources) != 2 {
+		t.Fatalf("got %d resources, want 2", len(resources))
+	}
+	for i, want := range []string{"tfer--rg-mock-1", "tfer--rg-mock-2"} {
+		if resources[i].ResourceName != want {
+			t.Errorf("resource %d name = %q, want %q", i, resources[i].ResourceName, want)
+		}
+		if resources[i].InstanceInfo.Type != "azurerm_resource_group" {
+			t.Errorf("resource %d type = %q, want azurerm_resource_group", i, resources[i].InstanceInfo.Type)
+		}
+	}
+	if len(tr.urls) == 0 || !strings.Contains(tr.urls[0], "resourcegroups") {
+		t.Errorf("expected an ARM resourcegroups call, got %v", tr.urls)
+	}
+}
+
+func TestMockTrack2VirtualNetworks(t *testing.T) {
+	tr := &cannedTransport{body: mockVnetsJSON}
+	client, err := armnetwork.NewVirtualNetworksClient(mockSubscriptionID, stubCredential{}, mockClientOptions(tr))
+	if err != nil {
+		t.Fatalf("client: %v", err)
+	}
+	g := &VirtualNetworkGenerator{}
+	pager := client.NewListAllPager(nil)
+	ctx := context.Background()
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			t.Fatalf("next page: %v", err)
+		}
+		g.appendResources(page.Value)
+	}
+	if len(g.Resources) != 1 {
+		t.Fatalf("got %d resources, want 1", len(g.Resources))
+	}
+	if g.Resources[0].ResourceName != "tfer--vnet-mock-1" {
+		t.Errorf("name = %q, want tfer--vnet-mock-1", g.Resources[0].ResourceName)
+	}
+	if g.Resources[0].InstanceInfo.Type != "azurerm_virtual_network" {
+		t.Errorf("type = %q, want azurerm_virtual_network", g.Resources[0].InstanceInfo.Type)
+	}
+	if len(tr.urls) == 0 || !strings.Contains(tr.urls[0], "virtualNetworks") {
+		t.Errorf("expected an ARM virtualNetworks call, got %v", tr.urls)
+	}
+}
