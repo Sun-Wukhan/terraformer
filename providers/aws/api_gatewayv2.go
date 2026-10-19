@@ -332,7 +332,7 @@ func (g *APIGatewayV2Generator) loadAuthorizers(svc *apigatewayv2.ApiGatewayV2, 
 	return nil
 }
 
-func (g *APIGatewayV2Generator) processAuthorizers(output []*apigatewayv2.Authorizer, restAPIID *string) error {
+func (g *APIGatewayV2Generator) processAuthorizers(output []*apigatewayv2.Authorizer, restAPIID *string) {
 	for _, authoriser := range output {
 
 		g.Resources = append(g.Resources, terraformutils.NewResource(
@@ -350,7 +350,6 @@ func (g *APIGatewayV2Generator) processAuthorizers(output []*apigatewayv2.Author
 		))
 
 	}
-	return nil
 }
 
 func (g *APIGatewayV2Generator) loadVpcLinks(svc *apigatewayv2.ApiGatewayV2) error {
@@ -376,7 +375,7 @@ func (g *APIGatewayV2Generator) loadVpcLinks(svc *apigatewayv2.ApiGatewayV2) err
 	return nil
 }
 
-func (g *APIGatewayV2Generator) processVpcLinks(output []*apigatewayv2.VpcLink) error {
+func (g *APIGatewayV2Generator) processVpcLinks(output []*apigatewayv2.VpcLink) {
 	for _, vpcLink := range output {
 
 		g.Resources = append(g.Resources, terraformutils.NewSimpleResource(
@@ -386,5 +385,4 @@ func (g *APIGatewayV2Generator) processVpcLinks(output []*apigatewayv2.VpcLink) 
 			"aws",
 			apiGatewayAllowEmptyValues))
 	}
-	return nil
 }
