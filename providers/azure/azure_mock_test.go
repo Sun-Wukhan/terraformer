@@ -25,9 +25,13 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/analysisservices/armanalysisservices"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/databricks/armdatabricks"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/dns/armdns"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/keyvault/armkeyvault"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/redis/armredis"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storage/armstorage"
 	"github.com/GoogleCloudPlatform/terraformer/terraformutils"
@@ -267,5 +271,119 @@ func TestMockTrack2DNSZones(t *testing.T) {
 	}
 	if len(tr.urls) == 0 || !strings.Contains(tr.urls[0], "dnszones") {
 		t.Errorf("expected an ARM dnszones call, got %v", tr.urls)
+	}
+}
+
+const mockRedisJSON = `{"value":[
+	{"id":"/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-mock-1/providers/Microsoft.Cache/Redis/redis-mock-1","name":"redis-mock-1","location":"eastus","type":"Microsoft.Cache/Redis","properties":{}}
+]}`
+
+const mockAnalysisServersJSON = `{"value":[
+	{"id":"/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-mock-1/providers/Microsoft.AnalysisServices/servers/as-mock-1","name":"as-mock-1","location":"eastus","type":"Microsoft.AnalysisServices/servers","properties":{}}
+]}`
+
+const mockDatabricksJSON = `{"value":[
+	{"id":"/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-mock-1/providers/Microsoft.Databricks/workspaces/dbw-mock-1","name":"dbw-mock-1","location":"eastus","type":"Microsoft.Databricks/workspaces","properties":{}}
+]}`
+
+const mockKeyVaultsJSON = `{"value":[
+	{"id":"/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-mock-1/providers/Microsoft.KeyVault/vaults/kv-mock-1","name":"kv-mock-1","location":"eastus","type":"Microsoft.KeyVault/vaults","properties":{}}
+]}`
+
+func TestMockTrack2Redis(t *testing.T) {
+	tr := &cannedTransport{body: mockRedisJSON}
+	client, err := armredis.NewClient(mockSubscriptionID, stubCredential{}, mockClientOptions(tr))
+	if err != nil {
+		t.Fatalf("client: %v", err)
+	}
+	pager := client.NewListBySubscriptionPager(nil)
+	ctx := context.Background()
+	count := 0
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			t.Fatalf("next page: %v", err)
+		}
+		for _, s := range page.Value {
+			if *s.Name != "redis-mock-1" {
+				t.Errorf("name = %q, want redis-mock-1", *s.Name)
+			}
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatalf("got %d servers, want 1", count)
+	}
+	if len(tr.urls) == 0 || !strings.Contains(tr.urls[0], "Microsoft.Cache") {
+		t.Errorf("expected a Microsoft.Cache call, got %v", tr.urls)
+	}
+}
+
+func TestMockTrack2AnalysisServers(t *testing.T) {
+	tr := &cannedTransport{body: mockAnalysisServersJSON}
+	client, err := armanalysisservices.NewServersClient(mockSubscriptionID, stubCredential{}, mockClientOptions(tr))
+	if err != nil {
+		t.Fatalf("client: %v", err)
+	}
+	pager := client.NewListPager(nil)
+	ctx := context.Background()
+	if !pager.More() {
+		t.Fatal("expected at least one page")
+	}
+	page, err := pager.NextPage(ctx)
+	if err != nil {
+		t.Fatalf("next page: %v", err)
+	}
+	if len(page.Value) != 1 || *page.Value[0].Name != "as-mock-1" {
+		t.Fatalf("unexpected servers page: %+v", page.Value)
+	}
+	if len(tr.urls) == 0 || !strings.Contains(tr.urls[0], "Microsoft.AnalysisServices") {
+		t.Errorf("expected a Microsoft.AnalysisServices call, got %v", tr.urls)
+	}
+}
+
+func TestMockTrack2DatabricksWorkspaces(t *testing.T) {
+	tr := &cannedTransport{body: mockDatabricksJSON}
+	client, err := armdatabricks.NewWorkspacesClient(mockSubscriptionID, stubCredential{}, mockClientOptions(tr))
+	if err != nil {
+		t.Fatalf("client: %v", err)
+	}
+	pager := client.NewListBySubscriptionPager(nil)
+	ctx := context.Background()
+	if !pager.More() {
+		t.Fatal("expected at least one page")
+	}
+	page, err := pager.NextPage(ctx)
+	if err != nil {
+		t.Fatalf("next page: %v", err)
+	}
+	if len(page.Value) != 1 || *page.Value[0].Name != "dbw-mock-1" {
+		t.Fatalf("unexpected workspaces page: %+v", page.Value)
+	}
+	if len(tr.urls) == 0 || !strings.Contains(tr.urls[0], "Microsoft.Databricks") {
+		t.Errorf("expected a Microsoft.Databricks call, got %v", tr.urls)
+	}
+}
+
+func TestMockTrack2KeyVaults(t *testing.T) {
+	tr := &cannedTransport{body: mockKeyVaultsJSON}
+	client, err := armkeyvault.NewVaultsClient(mockSubscriptionID, stubCredential{}, mockClientOptions(tr))
+	if err != nil {
+		t.Fatalf("client: %v", err)
+	}
+	pager := client.NewListPager(nil)
+	ctx := context.Background()
+	if !pager.More() {
+		t.Fatal("expected at least one page")
+	}
+	page, err := pager.NextPage(ctx)
+	if err != nil {
+		t.Fatalf("next page: %v", err)
+	}
+	if len(page.Value) != 1 || *page.Value[0].Name != "kv-mock-1" {
+		t.Fatalf("unexpected vaults page: %+v", page.Value)
+	}
+	if len(tr.urls) == 0 || !strings.Contains(tr.urls[0], "Microsoft.KeyVault") {
+		t.Errorf("expected a Microsoft.KeyVault call, got %v", tr.urls)
 	}
 }

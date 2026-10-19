@@ -18,43 +18,45 @@ import (
 	"context"
 	"log"
 
-	"github.com/Azure/azure-sdk-for-go/services/databricks/mgmt/2018-04-01/databricks"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/databricks/armdatabricks"
 )
 
 type DatabricksGenerator struct {
 	AzureService
 }
 
-func (az *DatabricksGenerator) listWorkspaces() ([]databricks.Workspace, error) {
-	subscriptionID, resourceGroup, authorizer, resourceManagerEndpoint := az.getClientArgs()
-	client := databricks.NewWorkspacesClientWithBaseURI(resourceManagerEndpoint, subscriptionID)
-	client.Authorizer = authorizer
-	var (
-		iterator databricks.WorkspaceListResultIterator
-		err      error
-	)
-	ctx := context.Background()
-	if resourceGroup != "" {
-		iterator, err = client.ListByResourceGroupComplete(ctx, resourceGroup)
-	} else {
-		iterator, err = client.ListBySubscriptionComplete(ctx)
-	}
+func (az *DatabricksGenerator) listWorkspaces() ([]*armdatabricks.Workspace, error) {
+	client, err := armdatabricks.NewWorkspacesClient(az.getSubscriptionID(), az.getCredential(), az.armClientOptions())
 	if err != nil {
 		return nil, err
 	}
-	var resources []databricks.Workspace
-	for iterator.NotDone() {
-		item := iterator.Value()
-		resources = append(resources, item)
-		if err := iterator.NextWithContext(ctx); err != nil {
-			log.Println(err)
-			return resources, err
+	ctx := context.Background()
+	var resources []*armdatabricks.Workspace
+	if rg := az.getResourceGroup(); rg != "" {
+		pager := client.NewListByResourceGroupPager(rg, nil)
+		for pager.More() {
+			page, err := pager.NextPage(ctx)
+			if err != nil {
+				log.Println(err)
+				return resources, err
+			}
+			resources = append(resources, page.Value...)
+		}
+	} else {
+		pager := client.NewListBySubscriptionPager(nil)
+		for pager.More() {
+			page, err := pager.NextPage(ctx)
+			if err != nil {
+				log.Println(err)
+				return resources, err
+			}
+			resources = append(resources, page.Value...)
 		}
 	}
 	return resources, nil
 }
 
-func (az *DatabricksGenerator) AppendWorkspace(workspace *databricks.Workspace) {
+func (az *DatabricksGenerator) AppendWorkspace(workspace *armdatabricks.Workspace) {
 	az.AppendSimpleResource(*workspace.ID, *workspace.Name, "azurerm_databricks_workspace")
 }
 
@@ -65,7 +67,7 @@ func (az *DatabricksGenerator) InitResources() error {
 		return err
 	}
 	for _, workspace := range workspaces {
-		az.AppendWorkspace(&workspace)
+		az.AppendWorkspace(workspace)
 	}
 	return nil
 }

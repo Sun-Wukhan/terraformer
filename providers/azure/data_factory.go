@@ -21,7 +21,7 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/Azure/azure-sdk-for-go/services/datafactory/mgmt/2018-06-01/datafactory"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/datafactory/armdatafactory"
 	"github.com/GoogleCloudPlatform/terraformer/terraformutils"
 )
 
@@ -98,7 +98,17 @@ func getFieldFrom(v interface{}, field string) reflect.Value {
 func getFieldAsString(v interface{}, field string) string {
 	fieldValue := getFieldFrom(v, field)
 	if fieldValue.IsValid() {
-		return fieldValue.String()
+		// track-2 discriminator fields are pointers (e.g. Type *string);
+		// dereference before reading the string value
+		for fieldValue.Kind() == reflect.Ptr {
+			if fieldValue.IsNil() {
+				return ""
+			}
+			fieldValue = fieldValue.Elem()
+		}
+		if fieldValue.Kind() == reflect.String {
+			return fieldValue.String()
+		}
 	}
 	return ""
 }
@@ -126,36 +136,38 @@ func (az *DataFactoryGenerator) appendResourceFrom(resources []terraformutils.Re
 	return resources
 }
 
-func (az *DataFactoryGenerator) listFactories() ([]datafactory.Factory, error) {
-	subscriptionID, resourceGroup, authorizer, resourceManagerEndpoint := az.getClientArgs()
-	client := datafactory.NewFactoriesClientWithBaseURI(resourceManagerEndpoint, subscriptionID)
-	client.Authorizer = authorizer
-	var (
-		iterator datafactory.FactoryListResponseIterator
-		err      error
-	)
-	ctx := context.Background()
-	if resourceGroup != "" {
-		iterator, err = client.ListByResourceGroupComplete(ctx, resourceGroup)
-	} else {
-		iterator, err = client.ListComplete(ctx)
-	}
+func (az *DataFactoryGenerator) listFactories() ([]*armdatafactory.Factory, error) {
+	client, err := armdatafactory.NewFactoriesClient(az.getSubscriptionID(), az.getCredential(), az.armClientOptions())
 	if err != nil {
 		return nil, err
 	}
-	var resources []datafactory.Factory
-	for iterator.NotDone() {
-		item := iterator.Value()
-		resources = append(resources, item)
-		if err := iterator.NextWithContext(ctx); err != nil {
-			log.Println(err)
-			return resources, err
+	ctx := context.Background()
+	var resources []*armdatafactory.Factory
+	if rg := az.getResourceGroup(); rg != "" {
+		pager := client.NewListByResourceGroupPager(rg, nil)
+		for pager.More() {
+			page, err := pager.NextPage(ctx)
+			if err != nil {
+				log.Println(err)
+				return resources, err
+			}
+			resources = append(resources, page.Value...)
+		}
+	} else {
+		pager := client.NewListPager(nil)
+		for pager.More() {
+			page, err := pager.NextPage(ctx)
+			if err != nil {
+				log.Println(err)
+				return resources, err
+			}
+			resources = append(resources, page.Value...)
 		}
 	}
 	return resources, nil
 }
 
-func (az *DataFactoryGenerator) createDataFactoryResources(dataFactories []datafactory.Factory) ([]terraformutils.Resource, error) {
+func (az *DataFactoryGenerator) createDataFactoryResources(dataFactories []*armdatafactory.Factory) ([]terraformutils.Resource, error) {
 	var resources []terraformutils.Resource
 	for _, item := range dataFactories {
 		resources = az.appendResourceAs(resources, *item.ID, *item.Name, "azurerm_data_factory", "adf")
@@ -168,21 +180,22 @@ func getIntegrationRuntimeType(properties interface{}) string {
 	if azureType == "SelfHosted" {
 		return "azurerm_data_factory_integration_runtime_self_hosted"
 	}
-	// item.Properties.ManagedIntegrationRuntimeTypeProperties.SsisProperties
-	if typeProperties := getFieldFrom(properties, "ManagedIntegrationRuntimeTypeProperties"); typeProperties.IsValid() {
+	// item.Properties.TypeProperties.SsisProperties
+	if typeProperties := getFieldFrom(properties, "TypeProperties"); typeProperties.IsValid() {
 		managedRuntime := typeProperties.Interface()
 		SsisProperties := getFieldFrom(managedRuntime, "SsisProperties")
-		if SsisProperties.IsNil() {
+		if SsisProperties.IsValid() && SsisProperties.IsNil() {
 			return "azurerm_data_factory_integration_runtime_azure"
 		}
 	}
 	return "azurerm_data_factory_integration_runtime_azure_ssis"
 }
 
-func (az *DataFactoryGenerator) createIntegrationRuntimesResources(dataFactories []datafactory.Factory) ([]terraformutils.Resource, error) {
-	subscriptionID, _, authorizer, resourceManagerEndpoint := az.getClientArgs()
-	client := datafactory.NewIntegrationRuntimesClientWithBaseURI(resourceManagerEndpoint, subscriptionID)
-	client.Authorizer = authorizer
+func (az *DataFactoryGenerator) createIntegrationRuntimesResources(dataFactories []*armdatafactory.Factory) ([]terraformutils.Resource, error) {
+	client, err := armdatafactory.NewIntegrationRuntimesClient(az.getSubscriptionID(), az.getCredential(), az.armClientOptions())
+	if err != nil {
+		return nil, err
+	}
 	ctx := context.Background()
 	var resources []terraformutils.Resource
 	for _, factory := range dataFactories {
@@ -190,27 +203,27 @@ func (az *DataFactoryGenerator) createIntegrationRuntimesResources(dataFactories
 		if err != nil {
 			return nil, err
 		}
-		iterator, err := client.ListByFactoryComplete(ctx, id.ResourceGroup, *factory.Name)
-		if err != nil {
-			return nil, err
-		}
-		for iterator.NotDone() {
-			item := iterator.Value()
-			resourceType := getIntegrationRuntimeType(item.Properties)
-			resources = az.appendResourceAs(resources, *item.ID, *item.Name, resourceType, "adfr")
-			if err := iterator.NextWithContext(ctx); err != nil {
+		pager := client.NewListByFactoryPager(id.ResourceGroup, *factory.Name, nil)
+		for pager.More() {
+			page, err := pager.NextPage(ctx)
+			if err != nil {
 				log.Println(err)
 				return resources, err
+			}
+			for _, item := range page.Value {
+				resourceType := getIntegrationRuntimeType(item.Properties)
+				resources = az.appendResourceAs(resources, *item.ID, *item.Name, resourceType, "adfr")
 			}
 		}
 	}
 	return resources, nil
 }
 
-func (az *DataFactoryGenerator) createLinkedServiceResources(dataFactories []datafactory.Factory) ([]terraformutils.Resource, error) {
-	subscriptionID, _, authorizer, resourceManagerEndpoint := az.getClientArgs()
-	client := datafactory.NewLinkedServicesClientWithBaseURI(resourceManagerEndpoint, subscriptionID)
-	client.Authorizer = authorizer
+func (az *DataFactoryGenerator) createLinkedServiceResources(dataFactories []*armdatafactory.Factory) ([]terraformutils.Resource, error) {
+	client, err := armdatafactory.NewLinkedServicesClient(az.getSubscriptionID(), az.getCredential(), az.armClientOptions())
+	if err != nil {
+		return nil, err
+	}
 	ctx := context.Background()
 	var resources []terraformutils.Resource
 	for _, factory := range dataFactories {
@@ -218,26 +231,26 @@ func (az *DataFactoryGenerator) createLinkedServiceResources(dataFactories []dat
 		if err != nil {
 			return nil, err
 		}
-		iterator, err := client.ListByFactoryComplete(ctx, id.ResourceGroup, *factory.Name)
-		if err != nil {
-			return nil, err
-		}
-		for iterator.NotDone() {
-			item := iterator.Value()
-			resources = az.appendResourceFrom(resources, *item.ID, *item.Name, item.Properties)
-			if err = iterator.NextWithContext(ctx); err != nil {
+		pager := client.NewListByFactoryPager(id.ResourceGroup, *factory.Name, nil)
+		for pager.More() {
+			page, err := pager.NextPage(ctx)
+			if err != nil {
 				log.Println(err)
 				return resources, err
+			}
+			for _, item := range page.Value {
+				resources = az.appendResourceFrom(resources, *item.ID, *item.Name, item.Properties)
 			}
 		}
 	}
 	return resources, nil
 }
 
-func (az *DataFactoryGenerator) createPipelineResources(dataFactories []datafactory.Factory) ([]terraformutils.Resource, error) {
-	subscriptionID, _, authorizer, resourceManagerEndpoint := az.getClientArgs()
-	client := datafactory.NewPipelinesClientWithBaseURI(resourceManagerEndpoint, subscriptionID)
-	client.Authorizer = authorizer
+func (az *DataFactoryGenerator) createPipelineResources(dataFactories []*armdatafactory.Factory) ([]terraformutils.Resource, error) {
+	client, err := armdatafactory.NewPipelinesClient(az.getSubscriptionID(), az.getCredential(), az.armClientOptions())
+	if err != nil {
+		return nil, err
+	}
 	ctx := context.Background()
 	var resources []terraformutils.Resource
 	for _, factory := range dataFactories {
@@ -245,26 +258,26 @@ func (az *DataFactoryGenerator) createPipelineResources(dataFactories []datafact
 		if err != nil {
 			return nil, err
 		}
-		iterator, err := client.ListByFactoryComplete(ctx, id.ResourceGroup, *factory.Name)
-		if err != nil {
-			return nil, err
-		}
-		for iterator.NotDone() {
-			item := iterator.Value()
-			resources = az.appendResourceAs(resources, *item.ID, *item.Name, "azurerm_data_factory_pipeline", "adfp")
-			if err := iterator.NextWithContext(ctx); err != nil {
+		pager := client.NewListByFactoryPager(id.ResourceGroup, *factory.Name, nil)
+		for pager.More() {
+			page, err := pager.NextPage(ctx)
+			if err != nil {
 				log.Println(err)
 				return resources, err
+			}
+			for _, item := range page.Value {
+				resources = az.appendResourceAs(resources, *item.ID, *item.Name, "azurerm_data_factory_pipeline", "adfp")
 			}
 		}
 	}
 	return resources, nil
 }
 
-func (az *DataFactoryGenerator) createPipelineTriggerScheduleResources(dataFactories []datafactory.Factory) ([]terraformutils.Resource, error) {
-	subscriptionID, _, authorizer, resourceManagerEndpoint := az.getClientArgs()
-	client := datafactory.NewTriggersClientWithBaseURI(resourceManagerEndpoint, subscriptionID)
-	client.Authorizer = authorizer
+func (az *DataFactoryGenerator) createPipelineTriggerScheduleResources(dataFactories []*armdatafactory.Factory) ([]terraformutils.Resource, error) {
+	client, err := armdatafactory.NewTriggersClient(az.getSubscriptionID(), az.getCredential(), az.armClientOptions())
+	if err != nil {
+		return nil, err
+	}
 	ctx := context.Background()
 	var resources []terraformutils.Resource
 	for _, factory := range dataFactories {
@@ -272,26 +285,26 @@ func (az *DataFactoryGenerator) createPipelineTriggerScheduleResources(dataFacto
 		if err != nil {
 			return nil, err
 		}
-		iterator, err := client.ListByFactoryComplete(ctx, id.ResourceGroup, *factory.Name)
-		if err != nil {
-			return nil, err
-		}
-		for iterator.NotDone() {
-			item := iterator.Value()
-			resources = az.appendResourceFrom(resources, *item.ID, *item.Name, item.Properties)
-			if err := iterator.NextWithContext(ctx); err != nil {
+		pager := client.NewListByFactoryPager(id.ResourceGroup, *factory.Name, nil)
+		for pager.More() {
+			page, err := pager.NextPage(ctx)
+			if err != nil {
 				log.Println(err)
 				return resources, err
+			}
+			for _, item := range page.Value {
+				resources = az.appendResourceFrom(resources, *item.ID, *item.Name, item.Properties)
 			}
 		}
 	}
 	return resources, nil
 }
 
-func (az *DataFactoryGenerator) createDataFlowResources(dataFactories []datafactory.Factory) ([]terraformutils.Resource, error) {
-	subscriptionID, _, authorizer, resourceManagerEndpoint := az.getClientArgs()
-	client := datafactory.NewDataFlowsClientWithBaseURI(resourceManagerEndpoint, subscriptionID)
-	client.Authorizer = authorizer
+func (az *DataFactoryGenerator) createDataFlowResources(dataFactories []*armdatafactory.Factory) ([]terraformutils.Resource, error) {
+	client, err := armdatafactory.NewDataFlowsClient(az.getSubscriptionID(), az.getCredential(), az.armClientOptions())
+	if err != nil {
+		return nil, err
+	}
 	ctx := context.Background()
 	var resources []terraformutils.Resource
 	for _, factory := range dataFactories {
@@ -299,26 +312,26 @@ func (az *DataFactoryGenerator) createDataFlowResources(dataFactories []datafact
 		if err != nil {
 			return nil, err
 		}
-		iterator, err := client.ListByFactoryComplete(ctx, id.ResourceGroup, *factory.Name)
-		if err != nil {
-			return nil, err
-		}
-		for iterator.NotDone() {
-			item := iterator.Value()
-			resources = az.appendResourceAs(resources, *item.ID, *item.Name, "azurerm_data_factory_data_flow", "adfl")
-			if err := iterator.NextWithContext(ctx); err != nil {
+		pager := client.NewListByFactoryPager(id.ResourceGroup, *factory.Name, nil)
+		for pager.More() {
+			page, err := pager.NextPage(ctx)
+			if err != nil {
 				log.Println(err)
 				return resources, err
+			}
+			for _, item := range page.Value {
+				resources = az.appendResourceAs(resources, *item.ID, *item.Name, "azurerm_data_factory_data_flow", "adfl")
 			}
 		}
 	}
 	return resources, nil
 }
 
-func (az *DataFactoryGenerator) createPipelineDatasetResources(dataFactories []datafactory.Factory) ([]terraformutils.Resource, error) {
-	subscriptionID, _, authorizer, resourceManagerEndpoint := az.getClientArgs()
-	client := datafactory.NewDatasetsClientWithBaseURI(resourceManagerEndpoint, subscriptionID)
-	client.Authorizer = authorizer
+func (az *DataFactoryGenerator) createPipelineDatasetResources(dataFactories []*armdatafactory.Factory) ([]terraformutils.Resource, error) {
+	client, err := armdatafactory.NewDatasetsClient(az.getSubscriptionID(), az.getCredential(), az.armClientOptions())
+	if err != nil {
+		return nil, err
+	}
 	ctx := context.Background()
 	var resources []terraformutils.Resource
 	for _, factory := range dataFactories {
@@ -326,16 +339,15 @@ func (az *DataFactoryGenerator) createPipelineDatasetResources(dataFactories []d
 		if err != nil {
 			return nil, err
 		}
-		iterator, err := client.ListByFactoryComplete(ctx, id.ResourceGroup, *factory.Name)
-		if err != nil {
-			return nil, err
-		}
-		for iterator.NotDone() {
-			item := iterator.Value()
-			resources = az.appendResourceFrom(resources, *item.ID, *item.Name, item.Properties)
-			if err := iterator.NextWithContext(ctx); err != nil {
+		pager := client.NewListByFactoryPager(id.ResourceGroup, *factory.Name, nil)
+		for pager.More() {
+			page, err := pager.NextPage(ctx)
+			if err != nil {
 				log.Println(err)
 				return resources, err
+			}
+			for _, item := range page.Value {
+				resources = az.appendResourceFrom(resources, *item.ID, *item.Name, item.Properties)
 			}
 		}
 	}
@@ -349,7 +361,7 @@ func (az *DataFactoryGenerator) InitResources() error {
 		return err
 	}
 
-	factoriesFunctions := []func([]datafactory.Factory) ([]terraformutils.Resource, error){
+	factoriesFunctions := []func([]*armdatafactory.Factory) ([]terraformutils.Resource, error){
 		az.createDataFactoryResources,
 		az.createIntegrationRuntimesResources,
 		az.createLinkedServiceResources,

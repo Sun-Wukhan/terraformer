@@ -8,7 +8,7 @@
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
@@ -18,55 +18,51 @@ import (
 	"context"
 	"log"
 
-	"github.com/Azure/azure-sdk-for-go/services/keyvault/mgmt/2018-02-14/keyvault"
-	"github.com/Azure/go-autorest/autorest"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/keyvault/armkeyvault"
 	"github.com/GoogleCloudPlatform/terraformer/terraformutils"
-	"github.com/hashicorp/go-azure-helpers/authentication"
 )
 
 type KeyVaultGenerator struct {
 	AzureService
 }
 
-func (g KeyVaultGenerator) createResources(ctx context.Context, client keyvault.VaultsClient) ([]terraformutils.Resource, error) {
-	resourceListResultIterator, err := client.ListComplete(ctx, nil)
-	if err != nil {
-		return nil, err
-	}
+func (g KeyVaultGenerator) createResources(ctx context.Context, client *armkeyvault.VaultsClient) ([]terraformutils.Resource, error) {
+	pager := client.NewListPager(nil)
 	var resources []terraformutils.Resource
-	for resourceListResultIterator.NotDone() {
-		vault := resourceListResultIterator.Value()
-		resources = append(resources, terraformutils.NewSimpleResource(
-			*vault.ID,
-			*vault.Name,
-			"azurerm_key_vault",
-			"azurerm",
-			[]string{}))
-		if err := resourceListResultIterator.NextWithContext(ctx); err != nil {
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
 			log.Println(err)
 			return resources, err
+		}
+		for _, vault := range page.Value {
+			resources = append(resources, terraformutils.NewSimpleResource(
+				*vault.ID,
+				*vault.Name,
+				"azurerm_key_vault",
+				"azurerm",
+				[]string{}))
 		}
 	}
 	return resources, nil
 }
 
-func (g KeyVaultGenerator) createResourcesByResourceGroup(ctx context.Context, rg string, client keyvault.VaultsClient) ([]terraformutils.Resource, error) {
-	iterator, err := client.ListByResourceGroupComplete(ctx, rg, nil)
-	if err != nil {
-		return nil, err
-	}
+func (g KeyVaultGenerator) createResourcesByResourceGroup(ctx context.Context, rg string, client *armkeyvault.VaultsClient) ([]terraformutils.Resource, error) {
+	pager := client.NewListByResourceGroupPager(rg, nil)
 	var resources []terraformutils.Resource
-	for iterator.NotDone() {
-		vault := iterator.Value()
-		resources = append(resources, terraformutils.NewSimpleResource(
-			*vault.ID,
-			*vault.Name,
-			"azurerm_key_vault",
-			"azurerm",
-			[]string{}))
-		if err := iterator.NextWithContext(ctx); err != nil {
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
 			log.Println(err)
 			return resources, err
+		}
+		for _, vault := range page.Value {
+			resources = append(resources, terraformutils.NewSimpleResource(
+				*vault.ID,
+				*vault.Name,
+				"azurerm_key_vault",
+				"azurerm",
+				[]string{}))
 		}
 	}
 	return resources, nil
@@ -74,14 +70,12 @@ func (g KeyVaultGenerator) createResourcesByResourceGroup(ctx context.Context, r
 
 func (g *KeyVaultGenerator) InitResources() error {
 	ctx := context.Background()
-	subscriptionID := g.Args["config"].(authentication.Config).SubscriptionID
-	resourceManagerEndpoint := g.Args["config"].(authentication.Config).CustomResourceManagerEndpoint
-	vaultsClient := keyvault.NewVaultsClientWithBaseURI(resourceManagerEndpoint, subscriptionID)
+	vaultsClient, err := armkeyvault.NewVaultsClient(g.getSubscriptionID(), g.getCredential(), g.armClientOptions())
+	if err != nil {
+		return err
+	}
 
-	vaultsClient.Authorizer = g.Args["authorizer"].(autorest.Authorizer)
-
-	var err error
-	if rg := g.Args["resource_group"].(string); rg != "" {
+	if rg := g.getResourceGroup(); rg != "" {
 		g.Resources, err = g.createResourcesByResourceGroup(ctx, rg, vaultsClient)
 		return err
 	}
