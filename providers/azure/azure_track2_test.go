@@ -24,11 +24,11 @@ func TestInitServiceWiring(t *testing.T) {
 
 func TestAzureCloudConfig(t *testing.T) {
 	cases := map[string]cloud.Configuration{
-		"https://management.azure.com/":                 cloud.AzurePublic,
-		"https://management.usgovcloudapi.net/":        cloud.AzureGovernment,
-		"https://management.chinacloudapi.cn/":         cloud.AzureChina,
-		"https://management.custom.example.com/":       cloud.AzurePublic,
-		"":                                             cloud.AzurePublic,
+		"https://management.azure.com/":          cloud.AzurePublic,
+		"https://management.usgovcloudapi.net/":  cloud.AzureGovernment,
+		"https://management.chinacloudapi.cn/":   cloud.AzureChina,
+		"https://management.custom.example.com/": cloud.AzurePublic,
+		"":                                       cloud.AzurePublic,
 	}
 	for endpoint, want := range cases {
 		if got := azureCloudConfig(endpoint); !reflect.DeepEqual(got, want) {

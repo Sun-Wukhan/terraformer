@@ -100,7 +100,7 @@ func getFieldAsString(v interface{}, field string) string {
 	if fieldValue.IsValid() {
 		// track-2 discriminator fields are pointers (e.g. Type *string);
 		// dereference before reading the string value
-		for fieldValue.Kind() == reflect.Ptr {
+		for fieldValue.Kind() == reflect.Pointer {
 			if fieldValue.IsNil() {
 				return ""
 			}

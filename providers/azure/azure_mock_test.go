@@ -49,11 +49,6 @@ func (stubCredential) GetToken(context.Context, policy.TokenRequestOptions) (azc
 	return azcore.AccessToken{Token: "fake-token", ExpiresOn: time.Now().Add(time.Hour)}, nil
 }
 
-// roundTripFunc adapts a func to policy.Transporter (the SDK's HTTP layer).
-type roundTripFunc func(*http.Request) (*http.Response, error)
-
-func (f roundTripFunc) Do(r *http.Request) (*http.Response, error) { return f(r) }
-
 // cannedTransport serves body for every request and records the URLs seen,
 // so tests can assert the SDK actually issued the expected ARM calls.
 type cannedTransport struct {
