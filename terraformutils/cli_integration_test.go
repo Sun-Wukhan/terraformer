@@ -245,8 +245,8 @@ func TestShowStatePipeline(t *testing.T) {
 			}
 
 			r := &Resource{
-				ResourceName: "tfer__test",
-				InstanceInfo: &terraform.InstanceInfo{Type: "aws_vpc", Id: "aws_vpc.tfer__test"},
+				ResourceName:  "tfer__test",
+				InstanceInfo:  &terraform.InstanceInfo{Type: "aws_vpc", Id: "aws_vpc.tfer__test"},
 				InstanceState: &terraform.InstanceState{ID: "vpc-0123456789abcdef0"},
 			}
 			addrToResource := map[string]*Resource{"aws_vpc.tfer__test": r}
