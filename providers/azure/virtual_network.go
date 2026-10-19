@@ -18,64 +18,61 @@ import (
 	"context"
 	"log"
 
-	"github.com/Azure/azure-sdk-for-go/services/network/mgmt/2021-02-01/network"
-	"github.com/Azure/go-autorest/autorest"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/GoogleCloudPlatform/terraformer/terraformutils"
-	"github.com/hashicorp/go-azure-helpers/authentication"
 )
 
 type VirtualNetworkGenerator struct {
 	AzureService
 }
 
-func (g VirtualNetworkGenerator) createResources(ctx context.Context, iterator network.VirtualNetworkListResultIterator) ([]terraformutils.Resource, error) {
-	var resources []terraformutils.Resource
-	for iterator.NotDone() {
-		virtualNetwork := iterator.Value()
+func (g *VirtualNetworkGenerator) appendResources(vnets []*armnetwork.VirtualNetwork) {
+	for _, virtualNetwork := range vnets {
 		tferName := terraformutils.TfSanitize(*virtualNetwork.Name)
-		for _, resource := range resources {
+		for _, resource := range g.Resources {
 			if tferName == resource.ResourceName {
 				*virtualNetwork.Name = *virtualNetwork.Name + "_" + *virtualNetwork.ID
 			}
 		}
 
-		resources = append(resources, terraformutils.NewSimpleResource(
+		g.Resources = append(g.Resources, terraformutils.NewSimpleResource(
 			*virtualNetwork.ID,
 			*virtualNetwork.Name,
 			"azurerm_virtual_network",
 			g.ProviderName,
 			[]string{}))
-		if err := iterator.NextWithContext(ctx); err != nil {
-			log.Println(err)
-			return resources, err
-		}
 	}
-	return resources, nil
 }
 
 func (g *VirtualNetworkGenerator) InitResources() error {
 	ctx := context.Background()
-	subscriptionID := g.Args["config"].(authentication.Config).SubscriptionID
-	resourceManagerEndpoint := g.Args["config"].(authentication.Config).CustomResourceManagerEndpoint
-	virtualNetworkClient := network.NewVirtualNetworksClientWithBaseURI(resourceManagerEndpoint, subscriptionID)
-
-	virtualNetworkClient.Authorizer = g.Args["authorizer"].(autorest.Authorizer)
-
-	var (
-		output network.VirtualNetworkListResultIterator
-		err    error
-	)
-
-	if rg := g.Args["resource_group"].(string); rg != "" {
-		output, err = virtualNetworkClient.ListComplete(ctx, rg)
-	} else {
-		output, err = virtualNetworkClient.ListAllComplete(ctx)
-	}
+	client, err := armnetwork.NewVirtualNetworksClient(g.getSubscriptionID(), g.getCredential(), g.armClientOptions())
 	if err != nil {
 		return err
 	}
-	g.Resources, err = g.createResources(ctx, output)
-	return err
+
+	if rg := g.getResourceGroup(); rg != "" {
+		pager := client.NewListPager(rg, nil)
+		for pager.More() {
+			page, err := pager.NextPage(ctx)
+			if err != nil {
+				log.Println(err)
+				return err
+			}
+			g.appendResources(page.Value)
+		}
+	} else {
+		pager := client.NewListAllPager(nil)
+		for pager.More() {
+			page, err := pager.NextPage(ctx)
+			if err != nil {
+				log.Println(err)
+				return err
+			}
+			g.appendResources(page.Value)
+		}
+	}
+	return nil
 }
 
 // NOTE on Virtual Networks and Subnet's:

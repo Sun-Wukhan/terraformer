@@ -17,6 +17,9 @@ package azure
 import (
 	"strings"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/go-autorest/autorest"
 	"github.com/GoogleCloudPlatform/terraformer/terraformutils"
 	"github.com/hashicorp/go-azure-helpers/authentication"
@@ -32,6 +35,47 @@ func (az *AzureService) getClientArgs() (subscriptionID string, resourceGroup st
 	resg := az.Args["resource_group"].(string)
 	rEndpoint := az.Args["config"].(authentication.Config).CustomResourceManagerEndpoint
 	return subs, resg, auth, rEndpoint
+}
+
+// getCredential returns the track-2 (azidentity) token credential.
+// Migrated services use this instead of the track-1 autorest Authorizer.
+func (az *AzureService) getCredential() azcore.TokenCredential {
+	return az.Args["credential"].(azcore.TokenCredential)
+}
+
+func (az *AzureService) getSubscriptionID() string {
+	return az.Args["config"].(authentication.Config).SubscriptionID
+}
+
+func (az *AzureService) getResourceGroup() string {
+	return az.Args["resource_group"].(string)
+}
+
+func (az *AzureService) getResourceManagerEndpoint() string {
+	return az.Args["config"].(authentication.Config).CustomResourceManagerEndpoint
+}
+
+// armClientOptions maps the configured ARM environment to the track-2
+// cloud configuration used by all arm* clients.
+func (az *AzureService) armClientOptions() *arm.ClientOptions {
+	return &arm.ClientOptions{
+		ClientOptions: azcore.ClientOptions{
+			Cloud: azureCloudConfig(az.Args["config"].(authentication.Config).CustomResourceManagerEndpoint),
+		},
+	}
+}
+
+// azureCloudConfig maps a Resource Manager endpoint to a track-2 cloud
+// configuration, mirroring the environment selection in setEnvConfig.
+func azureCloudConfig(resourceManagerEndpoint string) cloud.Configuration {
+	switch {
+	case strings.Contains(resourceManagerEndpoint, "usgovcloudapi"):
+		return cloud.AzureGovernment
+	case strings.Contains(resourceManagerEndpoint, "chinacloudapi"):
+		return cloud.AzureChina
+	default:
+		return cloud.AzurePublic
+	}
 }
 
 func (az *AzureService) AppendSimpleResource(id string, resourceName string, resourceType string) {

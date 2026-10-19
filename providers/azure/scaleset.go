@@ -18,76 +18,52 @@ import (
 	"context"
 	"log"
 
-	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2019-12-01/compute"
-	"github.com/Azure/go-autorest/autorest"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
 	"github.com/GoogleCloudPlatform/terraformer/terraformutils"
-	"github.com/hashicorp/go-azure-helpers/authentication"
 )
 
 type ScaleSetGenerator struct {
 	AzureService
 }
 
-func (g ScaleSetGenerator) createResourcesByResourceGroup(ctx context.Context, client compute.VirtualMachineScaleSetsClient, rg string) ([]terraformutils.Resource, error) {
-	scaleSetIterator, err := client.ListComplete(ctx, rg)
-	if err != nil {
-		return nil, err
-	}
-	var resources []terraformutils.Resource
-	for scaleSetIterator.NotDone() {
-		scaleSet := scaleSetIterator.Value()
-		newResource := terraformutils.NewSimpleResource(
+func (g *ScaleSetGenerator) appendResources(scaleSets []*armcompute.VirtualMachineScaleSet) {
+	for _, scaleSet := range scaleSets {
+		g.Resources = append(g.Resources, terraformutils.NewSimpleResource(
 			*scaleSet.ID,
 			*scaleSet.Name,
 			"azurerm_virtual_machine_scale_set",
 			"azurerm",
-			[]string{})
-		resources = append(resources, newResource)
-		if err := scaleSetIterator.Next(); err != nil {
-			log.Println(err)
-			return resources, err
-		}
+			[]string{}))
 	}
-	return resources, nil
-}
-
-func (g ScaleSetGenerator) createResources(ctx context.Context, client compute.VirtualMachineScaleSetsClient) ([]terraformutils.Resource, error) {
-	scaleSetIterator, err := client.ListAllComplete(ctx)
-	if err != nil {
-		return nil, err
-	}
-	var resources []terraformutils.Resource
-	for scaleSetIterator.NotDone() {
-		scaleSet := scaleSetIterator.Value()
-		newResource := terraformutils.NewSimpleResource(
-			*scaleSet.ID,
-			*scaleSet.Name,
-			"azurerm_virtual_machine_scale_set",
-			"azurerm",
-			[]string{})
-		resources = append(resources, newResource)
-		if err := scaleSetIterator.Next(); err != nil {
-			log.Println(err)
-			return resources, err
-		}
-	}
-	return resources, nil
 }
 
 func (g *ScaleSetGenerator) InitResources() error {
 	ctx := context.Background()
-	subscriptionID := g.Args["config"].(authentication.Config).SubscriptionID
-	resourceManagerEndpoint := g.Args["config"].(authentication.Config).CustomResourceManagerEndpoint
-	ScaleSetClient := compute.NewVirtualMachineScaleSetsClientWithBaseURI(resourceManagerEndpoint, subscriptionID)
-
-	ScaleSetClient.Authorizer = g.Args["authorizer"].(autorest.Authorizer)
-
-	if rg := g.Args["resource_group"].(string); rg != "" {
-		var err error
-		g.Resources, err = g.createResourcesByResourceGroup(ctx, ScaleSetClient, rg)
+	client, err := armcompute.NewVirtualMachineScaleSetsClient(g.getSubscriptionID(), g.getCredential(), g.armClientOptions())
+	if err != nil {
 		return err
 	}
-	var err error
-	g.Resources, err = g.createResources(ctx, ScaleSetClient)
-	return err
+
+	if rg := g.getResourceGroup(); rg != "" {
+		pager := client.NewListPager(rg, nil)
+		for pager.More() {
+			page, err := pager.NextPage(ctx)
+			if err != nil {
+				log.Println(err)
+				return err
+			}
+			g.appendResources(page.Value)
+		}
+	} else {
+		pager := client.NewListAllPager(nil)
+		for pager.More() {
+			page, err := pager.NextPage(ctx)
+			if err != nil {
+				log.Println(err)
+				return err
+			}
+			g.appendResources(page.Value)
+		}
+	}
+	return nil
 }

@@ -18,29 +18,30 @@ import (
 	"context"
 	"log"
 
-	"github.com/Azure/azure-sdk-for-go/services/resources/mgmt/2019-05-01/resources"
-	"github.com/Azure/go-autorest/autorest"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/GoogleCloudPlatform/terraformer/terraformutils"
-	"github.com/hashicorp/go-azure-helpers/authentication"
 )
 
 type ResourceGroupGenerator struct {
 	AzureService
 }
 
-func (g ResourceGroupGenerator) createResources(groupListResultIterator resources.GroupListResultIterator) []terraformutils.Resource {
+func (g ResourceGroupGenerator) createResources(ctx context.Context, pager *runtime.Pager[armresources.ResourceGroupsClientListResponse]) []terraformutils.Resource {
 	var resources []terraformutils.Resource
-	for groupListResultIterator.NotDone() {
-		group := groupListResultIterator.Value()
-		resources = append(resources, terraformutils.NewSimpleResource(
-			*group.ID,
-			*group.Name,
-			"azurerm_resource_group",
-			"azurerm",
-			[]string{}))
-		if err := groupListResultIterator.Next(); err != nil {
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
 			log.Println(err)
 			break
+		}
+		for _, group := range page.Value {
+			resources = append(resources, terraformutils.NewSimpleResource(
+				*group.ID,
+				*group.Name,
+				"azurerm_resource_group",
+				"azurerm",
+				[]string{}))
 		}
 	}
 	return resources
@@ -48,31 +49,26 @@ func (g ResourceGroupGenerator) createResources(groupListResultIterator resource
 
 func (g *ResourceGroupGenerator) InitResources() error {
 	ctx := context.Background()
-	subscriptionID := g.Args["config"].(authentication.Config).SubscriptionID
-	resourceManagerEndpoint := g.Args["config"].(authentication.Config).CustomResourceManagerEndpoint
-	groupsClient := resources.NewGroupsClientWithBaseURI(resourceManagerEndpoint, subscriptionID)
+	client, err := armresources.NewResourceGroupsClient(g.getSubscriptionID(), g.getCredential(), g.armClientOptions())
+	if err != nil {
+		return err
+	}
 
-	groupsClient.Authorizer = g.Args["authorizer"].(autorest.Authorizer)
-
-	if rg := g.Args["resource_group"].(string); rg != "" {
-		group, err := groupsClient.Get(ctx, rg)
+	if rg := g.getResourceGroup(); rg != "" {
+		resp, err := client.Get(ctx, rg, nil)
 		if err != nil {
 			return err
 		}
 		g.Resources = []terraformutils.Resource{
 			terraformutils.NewSimpleResource(
-				*group.ID,
-				*group.Name,
+				*resp.ResourceGroup.ID,
+				*resp.ResourceGroup.Name,
 				"azurerm_resource_group",
 				"azurerm",
 				[]string{}),
 		}
 		return nil
 	}
-	output, err := groupsClient.ListComplete(ctx, "", nil)
-	if err != nil {
-		return err
-	}
-	g.Resources = g.createResources(output)
+	g.Resources = g.createResources(ctx, client.NewListPager(nil))
 	return nil
 }

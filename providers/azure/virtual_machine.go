@@ -18,23 +18,19 @@ import (
 	"context"
 	"log"
 
-	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2019-03-01/compute"
-	"github.com/Azure/go-autorest/autorest"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
 	"github.com/GoogleCloudPlatform/terraformer/terraformutils"
-	"github.com/hashicorp/go-azure-helpers/authentication"
 )
 
 type VirtualMachineGenerator struct {
 	AzureService
 }
 
-func (g VirtualMachineGenerator) createResources(virtualMachineListResultIterator compute.VirtualMachineListResultIterator) ([]terraformutils.Resource, error) {
-	var resources []terraformutils.Resource
-	for virtualMachineListResultIterator.NotDone() {
-		vm := virtualMachineListResultIterator.Value()
+func (g *VirtualMachineGenerator) appendResources(vms []*armcompute.VirtualMachine) {
+	for _, vm := range vms {
 		var newResource terraformutils.Resource
-		if vm.VirtualMachineProperties.OsProfile == nil {
-			if vm.VirtualMachineProperties.StorageProfile.OsDisk.OsType == "Windows" {
+		if vm.Properties.OSProfile == nil {
+			if *vm.Properties.StorageProfile.OSDisk.OSType == armcompute.OperatingSystemTypesWindows {
 				newResource = terraformutils.NewSimpleResource(
 					*vm.ID,
 					*vm.Name,
@@ -50,7 +46,7 @@ func (g VirtualMachineGenerator) createResources(virtualMachineListResultIterato
 					[]string{})
 			}
 		} else {
-			if vm.VirtualMachineProperties.OsProfile.WindowsConfiguration != nil {
+			if vm.Properties.OSProfile.WindowsConfiguration != nil {
 				newResource = terraformutils.NewSimpleResource(
 					*vm.ID,
 					*vm.Name,
@@ -67,35 +63,37 @@ func (g VirtualMachineGenerator) createResources(virtualMachineListResultIterato
 			}
 		}
 
-		resources = append(resources, newResource)
-		if err := virtualMachineListResultIterator.Next(); err != nil {
-			log.Println(err)
-			return resources, err
-		}
+		g.Resources = append(g.Resources, newResource)
 	}
-	return resources, nil
 }
 
 func (g *VirtualMachineGenerator) InitResources() error {
 	ctx := context.Background()
-	subscriptionID := g.Args["config"].(authentication.Config).SubscriptionID
-	resourceManagerEndpoint := g.Args["config"].(authentication.Config).CustomResourceManagerEndpoint
-	vmClient := compute.NewVirtualMachinesClientWithBaseURI(resourceManagerEndpoint, subscriptionID)
-
-	vmClient.Authorizer = g.Args["authorizer"].(autorest.Authorizer)
-
-	var (
-		output compute.VirtualMachineListResultIterator
-		err    error
-	)
-	if rg := g.Args["resource_group"].(string); rg != "" {
-		output, err = vmClient.ListComplete(ctx, rg)
-	} else {
-		output, err = vmClient.ListAllComplete(ctx)
-	}
+	client, err := armcompute.NewVirtualMachinesClient(g.getSubscriptionID(), g.getCredential(), g.armClientOptions())
 	if err != nil {
 		return err
 	}
-	g.Resources, err = g.createResources(output)
-	return err
+
+	if rg := g.getResourceGroup(); rg != "" {
+		pager := client.NewListPager(rg, nil)
+		for pager.More() {
+			page, err := pager.NextPage(ctx)
+			if err != nil {
+				log.Println(err)
+				return err
+			}
+			g.appendResources(page.Value)
+		}
+	} else {
+		pager := client.NewListAllPager(nil)
+		for pager.More() {
+			page, err := pager.NextPage(ctx)
+			if err != nil {
+				log.Println(err)
+				return err
+			}
+			g.appendResources(page.Value)
+		}
+	}
+	return nil
 }
