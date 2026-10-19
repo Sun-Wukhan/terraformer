@@ -56,13 +56,13 @@ type blockJSON struct {
 }
 
 type attributeJSON struct {
-	Type        interface{}   `json:"type"`
+	Type        interface{}     `json:"type"`
 	NestedType  *nestedTypeJSON `json:"nested_type"`
-	Description string        `json:"description"`
-	Required    bool          `json:"required"`
-	Optional    bool          `json:"optional"`
-	Computed    bool          `json:"computed"`
-	Sensitive   bool          `json:"sensitive"`
+	Description string          `json:"description"`
+	Required    bool            `json:"required"`
+	Optional    bool            `json:"optional"`
+	Computed    bool            `json:"computed"`
+	Sensitive   bool            `json:"sensitive"`
 }
 
 // nestedTypeJSON is the schema shape for protocol-6 nested attributes
