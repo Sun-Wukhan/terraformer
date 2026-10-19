@@ -15,11 +15,12 @@
 package ns1
 
 import (
+	"net/http"
+	"time"
+
 	"github.com/GoogleCloudPlatform/terraformer/terraformutils"
 	ns1 "gopkg.in/ns1/ns1-go.v2/rest"
 	"gopkg.in/ns1/ns1-go.v2/rest/model/dns"
-	"net/http"
-	"time"
 )
 
 type ZoneGenerator struct {
