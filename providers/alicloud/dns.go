@@ -40,7 +40,7 @@ func resourceFromDomain(domain alidns.DomainInDescribeDomains) terraformutils.Re
 
 func resourceFromDomainRecord(record alidns.Record) terraformutils.Resource {
 	return terraformutils.NewResource(
-		record.RecordId,                        // id
+		record.RecordId, // id
 		record.RecordId+"__"+record.DomainName, // nolint
 		"alicloud_alidns_record",
 		"alicloud",
