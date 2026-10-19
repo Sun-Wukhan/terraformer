@@ -41,19 +41,20 @@ type DatadogProvider struct { //nolint
 // Init check env params and initialize API Client
 func (p *DatadogProvider) Init(args []string) error {
 
-	if args[3] != "" {
-		validate, validateErr := strconv.ParseBool(args[3])
+	switch validateStr, envValidate := args[3], os.Getenv("DATADOG_VALIDATE"); {
+	case validateStr != "":
+		validate, validateErr := strconv.ParseBool(validateStr)
 		if validateErr != nil {
 			return fmt.Errorf(`invalid validate arg : %v`, validateErr)
 		}
 		p.validate = validate
-	} else if os.Getenv("DATADOG_VALIDATE") != "" {
-		validate, validateErr := strconv.ParseBool(os.Getenv("DATADOG_VALIDATE"))
+	case envValidate != "":
+		validate, validateErr := strconv.ParseBool(envValidate)
 		if validateErr != nil {
 			return fmt.Errorf(`invalid DATADOG_VALIDATE env var : %v`, validateErr)
 		}
 		p.validate = validate
-	} else {
+	default:
 		p.validate = true
 	}
 
