@@ -18,9 +18,8 @@ import (
 	"context"
 	"log"
 
-	"github.com/Azure/azure-sdk-for-go/services/redis/mgmt/2018-03-01/redis"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/redis/armredis"
 	"github.com/GoogleCloudPlatform/terraformer/terraformutils"
-	"github.com/hashicorp/go-azure-helpers/authentication"
 )
 
 type RedisGenerator struct {
@@ -30,27 +29,25 @@ type RedisGenerator struct {
 func (g *RedisGenerator) listRedisServers() ([]terraformutils.Resource, error) {
 	var resources []terraformutils.Resource
 	ctx := context.Background()
-	subscriptionID := g.Args["config"].(authentication.Config).SubscriptionID
-	resourceManagerEndpoint := g.Args["config"].(authentication.Config).CustomResourceManagerEndpoint
-	RedisClient := redis.NewClientWithBaseURI(resourceManagerEndpoint, subscriptionID)
-
-	redisServersIterator, err := RedisClient.ListComplete(ctx)
+	client, err := armredis.NewClient(g.getSubscriptionID(), g.getCredential(), g.armClientOptions())
 	if err != nil {
 		return nil, err
 	}
 
-	for redisServersIterator.NotDone() {
-		redisServer := redisServersIterator.Value()
-		resources = append(resources, terraformutils.NewSimpleResource(
-			*redisServer.ID,
-			*redisServer.Name,
-			"azurerm_redis_cache",
-			g.ProviderName,
-			[]string{}))
-
-		if err := redisServersIterator.Next(); err != nil {
+	pager := client.NewListBySubscriptionPager(nil)
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
 			log.Println(err)
-			break
+			return resources, err
+		}
+		for _, redisServer := range page.Value {
+			resources = append(resources, terraformutils.NewSimpleResource(
+				*redisServer.ID,
+				*redisServer.Name,
+				"azurerm_redis_cache",
+				g.ProviderName,
+				[]string{}))
 		}
 	}
 

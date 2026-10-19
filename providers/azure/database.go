@@ -17,47 +17,54 @@ package azure
 import (
 	"context"
 	"fmt"
+	"log"
 	"strings"
 
-	"github.com/Azure/azure-sdk-for-go/services/mariadb/mgmt/2018-06-01/mariadb"
-	"github.com/Azure/azure-sdk-for-go/services/mysql/mgmt/2017-12-01/mysql"
-	"github.com/Azure/azure-sdk-for-go/services/postgresql/mgmt/2017-12-01/postgresql"
-	"github.com/Azure/azure-sdk-for-go/services/preview/sql/mgmt/2017-03-01-preview/sql"
-	"github.com/Azure/go-autorest/autorest"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/mariadb/armmariadb"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/mysql/armmysql"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/postgresql/armpostgresql"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/sql/armsql"
 	"github.com/GoogleCloudPlatform/terraformer/terraformutils"
-	"github.com/hashicorp/go-azure-helpers/authentication"
 )
 
 type DatabasesGenerator struct {
 	AzureService
 }
 
-func (g *DatabasesGenerator) getMariaDBServers() ([]mariadb.Server, error) {
+func (g *DatabasesGenerator) getMariaDBServers() ([]*armmariadb.Server, error) {
 	ctx := context.Background()
-	subscriptionID := g.Args["config"].(authentication.Config).SubscriptionID
-	resourceManagerEndpoint := g.Args["config"].(authentication.Config).CustomResourceManagerEndpoint
-	Authorizer := g.Args["authorizer"].(autorest.Authorizer)
-
-	Client := mariadb.NewServersClientWithBaseURI(resourceManagerEndpoint, subscriptionID)
-	Client.Authorizer = Authorizer
-
-	var (
-		Servers mariadb.ServerListResult
-		err     error
-	)
-	if rg := g.Args["resource_group"].(string); rg != "" {
-		Servers, err = Client.ListByResourceGroup(ctx, rg)
-	} else {
-		Servers, err = Client.List(ctx)
-	}
+	client, err := armmariadb.NewServersClient(g.getSubscriptionID(), g.getCredential(), g.armClientOptions())
 	if err != nil {
 		return nil, err
 	}
 
-	return *Servers.Value, nil
+	var servers []*armmariadb.Server
+	if rg := g.getResourceGroup(); rg != "" {
+		pager := client.NewListByResourceGroupPager(rg, nil)
+		for pager.More() {
+			page, err := pager.NextPage(ctx)
+			if err != nil {
+				log.Println(err)
+				return nil, err
+			}
+			servers = append(servers, page.Value...)
+		}
+	} else {
+		pager := client.NewListPager(nil)
+		for pager.More() {
+			page, err := pager.NextPage(ctx)
+			if err != nil {
+				log.Println(err)
+				return nil, err
+			}
+			servers = append(servers, page.Value...)
+		}
+	}
+
+	return servers, nil
 }
 
-func (g *DatabasesGenerator) createMariaDBServerResources(servers []mariadb.Server) ([]terraformutils.Resource, error) {
+func (g *DatabasesGenerator) createMariaDBServerResources(servers []*armmariadb.Server) ([]terraformutils.Resource, error) {
 	var resources []terraformutils.Resource
 
 	for _, server := range servers {
@@ -76,167 +83,176 @@ func (g *DatabasesGenerator) createMariaDBServerResources(servers []mariadb.Serv
 	return resources, nil
 }
 
-func (g *DatabasesGenerator) createMariaDBConfigurationResources(servers []mariadb.Server) ([]terraformutils.Resource, error) {
+func (g *DatabasesGenerator) createMariaDBConfigurationResources(servers []*armmariadb.Server) ([]terraformutils.Resource, error) {
 	var resources []terraformutils.Resource
 	ctx := context.Background()
-	subscriptionID := g.Args["config"].(authentication.Config).SubscriptionID
-	resourceManagerEndpoint := g.Args["config"].(authentication.Config).CustomResourceManagerEndpoint
-	Authorizer := g.Args["authorizer"].(autorest.Authorizer)
-
-	Client := mariadb.NewConfigurationsClientWithBaseURI(resourceManagerEndpoint, subscriptionID)
-	Client.Authorizer = Authorizer
-
-	for _, server := range servers {
-		id, err := ParseAzureResourceID(*server.ID)
-		if err != nil {
-			return nil, err
-		}
-		configs, err := Client.ListByServer(ctx, id.ResourceGroup, *server.Name)
-		if err != nil {
-			return nil, err
-		}
-
-		for _, config := range *configs.Value {
-			resources = append(resources, terraformutils.NewSimpleResource(
-				*config.ID,
-				*config.Name+"-"+*server.Name,
-				"azurerm_mariadb_configuration",
-				g.ProviderName,
-				[]string{"value"}))
-		}
+	client, err := armmariadb.NewConfigurationsClient(g.getSubscriptionID(), g.getCredential(), g.armClientOptions())
+	if err != nil {
+		return nil, err
 	}
 
-	return resources, nil
-}
-
-func (g *DatabasesGenerator) createMariaDBDatabaseResources(servers []mariadb.Server) ([]terraformutils.Resource, error) {
-	var resources []terraformutils.Resource
-	ctx := context.Background()
-	subscriptionID := g.Args["config"].(authentication.Config).SubscriptionID
-	resourceManagerEndpoint := g.Args["config"].(authentication.Config).CustomResourceManagerEndpoint
-	Authorizer := g.Args["authorizer"].(autorest.Authorizer)
-
-	Client := mariadb.NewDatabasesClientWithBaseURI(resourceManagerEndpoint, subscriptionID)
-	Client.Authorizer = Authorizer
-
 	for _, server := range servers {
 		id, err := ParseAzureResourceID(*server.ID)
 		if err != nil {
 			return nil, err
 		}
-		databases, err := Client.ListByServer(ctx, id.ResourceGroup, *server.Name)
-		if err != nil {
-			return nil, err
-		}
-
-		for _, database := range *databases.Value {
-			resources = append(resources, terraformutils.NewSimpleResource(
-				*database.ID,
-				*database.Name+"-"+*server.Name,
-				"azurerm_mariadb_database",
-				g.ProviderName,
-				[]string{}))
-		}
-	}
-
-	return resources, nil
-}
-
-func (g *DatabasesGenerator) createMariaDBFirewallRuleResources(servers []mariadb.Server) ([]terraformutils.Resource, error) {
-	var resources []terraformutils.Resource
-	ctx := context.Background()
-	subscriptionID := g.Args["config"].(authentication.Config).SubscriptionID
-	resourceManagerEndpoint := g.Args["config"].(authentication.Config).CustomResourceManagerEndpoint
-	Authorizer := g.Args["authorizer"].(autorest.Authorizer)
-
-	Client := mariadb.NewFirewallRulesClientWithBaseURI(resourceManagerEndpoint, subscriptionID)
-	Client.Authorizer = Authorizer
-	for _, server := range servers {
-		id, err := ParseAzureResourceID(*server.ID)
-		if err != nil {
-			return nil, err
-		}
-
-		rules, err := Client.ListByServer(ctx, id.ResourceGroup, *server.Name)
-		if err != nil {
-			return nil, err
-		}
-		for _, rule := range *rules.Value {
-			resources = append(resources, terraformutils.NewSimpleResource(
-				*rule.ID,
-				*rule.Name,
-				"azurerm_mariadb_firewall_rule",
-				g.ProviderName,
-				[]string{}))
-		}
-	}
-
-	return resources, nil
-}
-
-func (g *DatabasesGenerator) createMariaDBVirtualNetworkRuleResources(servers []mariadb.Server) ([]terraformutils.Resource, error) {
-	var resources []terraformutils.Resource
-	ctx := context.Background()
-	subscriptionID := g.Args["config"].(authentication.Config).SubscriptionID
-	resourceManagerEndpoint := g.Args["config"].(authentication.Config).CustomResourceManagerEndpoint
-	Authorizer := g.Args["authorizer"].(autorest.Authorizer)
-
-	Client := mariadb.NewVirtualNetworkRulesClientWithBaseURI(resourceManagerEndpoint, subscriptionID)
-	Client.Authorizer = Authorizer
-
-	for _, server := range servers {
-		id, err := ParseAzureResourceID(*server.ID)
-		if err != nil {
-			return nil, err
-		}
-		iter, err := Client.ListByServerComplete(ctx, id.ResourceGroup, *server.Name)
-		if err != nil {
-			return nil, err
-		}
-		for iter.NotDone() {
-			rule := iter.Value()
-			resources = append(resources, terraformutils.NewSimpleResource(
-				*rule.ID,
-				*rule.Name,
-				"azurerm_mariadb_virtual_network_rule",
-				g.ProviderName,
-				[]string{}))
-
-			if err := iter.NextWithContext(ctx); err != nil {
+		pager := client.NewListByServerPager(id.ResourceGroup, *server.Name, nil)
+		for pager.More() {
+			page, err := pager.NextPage(ctx)
+			if err != nil {
+				log.Println(err)
 				return nil, err
+			}
+			for _, config := range page.Value {
+				resources = append(resources, terraformutils.NewSimpleResource(
+					*config.ID,
+					*config.Name+"-"+*server.Name,
+					"azurerm_mariadb_configuration",
+					g.ProviderName,
+					[]string{"value"}))
+			}
+		}
+	}
+
+	return resources, nil
+}
+
+func (g *DatabasesGenerator) createMariaDBDatabaseResources(servers []*armmariadb.Server) ([]terraformutils.Resource, error) {
+	var resources []terraformutils.Resource
+	ctx := context.Background()
+	client, err := armmariadb.NewDatabasesClient(g.getSubscriptionID(), g.getCredential(), g.armClientOptions())
+	if err != nil {
+		return nil, err
+	}
+
+	for _, server := range servers {
+		id, err := ParseAzureResourceID(*server.ID)
+		if err != nil {
+			return nil, err
+		}
+		pager := client.NewListByServerPager(id.ResourceGroup, *server.Name, nil)
+		for pager.More() {
+			page, err := pager.NextPage(ctx)
+			if err != nil {
+				log.Println(err)
+				return nil, err
+			}
+			for _, database := range page.Value {
+				resources = append(resources, terraformutils.NewSimpleResource(
+					*database.ID,
+					*database.Name+"-"+*server.Name,
+					"azurerm_mariadb_database",
+					g.ProviderName,
+					[]string{}))
+			}
+		}
+	}
+
+	return resources, nil
+}
+
+func (g *DatabasesGenerator) createMariaDBFirewallRuleResources(servers []*armmariadb.Server) ([]terraformutils.Resource, error) {
+	var resources []terraformutils.Resource
+	ctx := context.Background()
+	client, err := armmariadb.NewFirewallRulesClient(g.getSubscriptionID(), g.getCredential(), g.armClientOptions())
+	if err != nil {
+		return nil, err
+	}
+
+	for _, server := range servers {
+		id, err := ParseAzureResourceID(*server.ID)
+		if err != nil {
+			return nil, err
+		}
+
+		pager := client.NewListByServerPager(id.ResourceGroup, *server.Name, nil)
+		for pager.More() {
+			page, err := pager.NextPage(ctx)
+			if err != nil {
+				log.Println(err)
+				return nil, err
+			}
+			for _, rule := range page.Value {
+				resources = append(resources, terraformutils.NewSimpleResource(
+					*rule.ID,
+					*rule.Name,
+					"azurerm_mariadb_firewall_rule",
+					g.ProviderName,
+					[]string{}))
+			}
+		}
+	}
+
+	return resources, nil
+}
+
+func (g *DatabasesGenerator) createMariaDBVirtualNetworkRuleResources(servers []*armmariadb.Server) ([]terraformutils.Resource, error) {
+	var resources []terraformutils.Resource
+	ctx := context.Background()
+	client, err := armmariadb.NewVirtualNetworkRulesClient(g.getSubscriptionID(), g.getCredential(), g.armClientOptions())
+	if err != nil {
+		return nil, err
+	}
+
+	for _, server := range servers {
+		id, err := ParseAzureResourceID(*server.ID)
+		if err != nil {
+			return nil, err
+		}
+		pager := client.NewListByServerPager(id.ResourceGroup, *server.Name, nil)
+		for pager.More() {
+			page, err := pager.NextPage(ctx)
+			if err != nil {
+				log.Println(err)
+				return nil, err
+			}
+			for _, rule := range page.Value {
+				resources = append(resources, terraformutils.NewSimpleResource(
+					*rule.ID,
+					*rule.Name,
+					"azurerm_mariadb_virtual_network_rule",
+					g.ProviderName,
+					[]string{}))
 			}
 		}
 	}
 	return resources, nil
 }
 
-func (g *DatabasesGenerator) getMySQLServers() ([]mysql.Server, error) {
+func (g *DatabasesGenerator) getMySQLServers() ([]*armmysql.Server, error) {
 	ctx := context.Background()
-	subscriptionID := g.Args["config"].(authentication.Config).SubscriptionID
-	resourceManagerEndpoint := g.Args["config"].(authentication.Config).CustomResourceManagerEndpoint
-	Authorizer := g.Args["authorizer"].(autorest.Authorizer)
-
-	Client := mysql.NewServersClientWithBaseURI(resourceManagerEndpoint, subscriptionID)
-	Client.Authorizer = Authorizer
-
-	var (
-		Servers mysql.ServerListResult
-		err     error
-	)
-
-	if rg := g.Args["resource_group"].(string); rg != "" {
-		Servers, err = Client.ListByResourceGroup(ctx, rg)
-	} else {
-		Servers, err = Client.List(ctx)
-	}
+	client, err := armmysql.NewServersClient(g.getSubscriptionID(), g.getCredential(), g.armClientOptions())
 	if err != nil {
 		return nil, err
 	}
 
-	return *Servers.Value, nil
+	var servers []*armmysql.Server
+	if rg := g.getResourceGroup(); rg != "" {
+		pager := client.NewListByResourceGroupPager(rg, nil)
+		for pager.More() {
+			page, err := pager.NextPage(ctx)
+			if err != nil {
+				log.Println(err)
+				return nil, err
+			}
+			servers = append(servers, page.Value...)
+		}
+	} else {
+		pager := client.NewListPager(nil)
+		for pager.More() {
+			page, err := pager.NextPage(ctx)
+			if err != nil {
+				log.Println(err)
+				return nil, err
+			}
+			servers = append(servers, page.Value...)
+		}
+	}
+
+	return servers, nil
 }
 
-func (g *DatabasesGenerator) createMySQLServerResources(servers []mysql.Server) ([]terraformutils.Resource, error) {
+func (g *DatabasesGenerator) createMySQLServerResources(servers []*armmysql.Server) ([]terraformutils.Resource, error) {
 	var resources []terraformutils.Resource
 
 	for _, server := range servers {
@@ -255,136 +271,34 @@ func (g *DatabasesGenerator) createMySQLServerResources(servers []mysql.Server) 
 	return resources, nil
 }
 
-func (g *DatabasesGenerator) createMySQLConfigurationResources(servers []mysql.Server) ([]terraformutils.Resource, error) {
+func (g *DatabasesGenerator) createMySQLConfigurationResources(servers []*armmysql.Server) ([]terraformutils.Resource, error) {
 	var resources []terraformutils.Resource
 	ctx := context.Background()
-	subscriptionID := g.Args["config"].(authentication.Config).SubscriptionID
-	resourceManagerEndpoint := g.Args["config"].(authentication.Config).CustomResourceManagerEndpoint
-	Authorizer := g.Args["authorizer"].(autorest.Authorizer)
-
-	Client := mysql.NewConfigurationsClientWithBaseURI(resourceManagerEndpoint, subscriptionID)
-	Client.Authorizer = Authorizer
-
-	for _, server := range servers {
-		id, err := ParseAzureResourceID(*server.ID)
-		if err != nil {
-			return nil, err
-		}
-
-		configs, err := Client.ListByServer(ctx, id.ResourceGroup, *server.Name)
-		if err != nil {
-			return nil, err
-		}
-		for _, config := range *configs.Value {
-			resources = append(resources, terraformutils.NewSimpleResource(
-				*config.ID,
-				*config.Name+"-"+*server.Name,
-				"azurerm_mysql_configuration",
-				g.ProviderName,
-				[]string{"value"}))
-		}
+	client, err := armmysql.NewConfigurationsClient(g.getSubscriptionID(), g.getCredential(), g.armClientOptions())
+	if err != nil {
+		return nil, err
 	}
 
-	return resources, nil
-}
-
-func (g *DatabasesGenerator) createMySQLDatabaseResources(servers []mysql.Server) ([]terraformutils.Resource, error) {
-	var resources []terraformutils.Resource
-	ctx := context.Background()
-	subscriptionID := g.Args["config"].(authentication.Config).SubscriptionID
-	resourceManagerEndpoint := g.Args["config"].(authentication.Config).CustomResourceManagerEndpoint
-	Authorizer := g.Args["authorizer"].(autorest.Authorizer)
-
-	Client := mysql.NewDatabasesClientWithBaseURI(resourceManagerEndpoint, subscriptionID)
-	Client.Authorizer = Authorizer
-
-	for _, server := range servers {
-		id, err := ParseAzureResourceID(*server.ID)
-		if err != nil {
-			return nil, err
-		}
-		databases, err := Client.ListByServer(ctx, id.ResourceGroup, *server.Name)
-		if err != nil {
-			return nil, err
-		}
-
-		for _, database := range *databases.Value {
-			resources = append(resources, terraformutils.NewSimpleResource(
-				*database.ID,
-				*database.Name+"-"+*server.Name,
-				"azurerm_mysql_database",
-				g.ProviderName,
-				[]string{}))
-		}
-	}
-	return resources, nil
-}
-
-func (g *DatabasesGenerator) createMySQLFirewallRuleResources(servers []mysql.Server) ([]terraformutils.Resource, error) {
-	var resources []terraformutils.Resource
-	ctx := context.Background()
-	subscriptionID := g.Args["config"].(authentication.Config).SubscriptionID
-	resourceManagerEndpoint := g.Args["config"].(authentication.Config).CustomResourceManagerEndpoint
-	Authorizer := g.Args["authorizer"].(autorest.Authorizer)
-
-	Client := mysql.NewFirewallRulesClientWithBaseURI(resourceManagerEndpoint, subscriptionID)
-	Client.Authorizer = Authorizer
-
-	for _, server := range servers {
-		id, err := ParseAzureResourceID(*server.ID)
-		if err != nil {
-			return nil, err
-		}
-		rules, err := Client.ListByServer(ctx, id.ResourceGroup, *server.Name)
-		if err != nil {
-			return nil, err
-		}
-
-		for _, rule := range *rules.Value {
-			resources = append(resources, terraformutils.NewSimpleResource(
-				*rule.ID,
-				*rule.Name,
-				"azurerm_mysql_firewall_rule",
-				g.ProviderName,
-				[]string{}))
-		}
-	}
-
-	return resources, nil
-}
-
-func (g *DatabasesGenerator) createMySQLVirtualNetworkRuleResources(servers []mysql.Server) ([]terraformutils.Resource, error) {
-	var resources []terraformutils.Resource
-	ctx := context.Background()
-	subscriptionID := g.Args["config"].(authentication.Config).SubscriptionID
-	resourceManagerEndpoint := g.Args["config"].(authentication.Config).CustomResourceManagerEndpoint
-	Authorizer := g.Args["authorizer"].(autorest.Authorizer)
-
-	Client := mysql.NewVirtualNetworkRulesClientWithBaseURI(resourceManagerEndpoint, subscriptionID)
-	Client.Authorizer = Authorizer
-
 	for _, server := range servers {
 		id, err := ParseAzureResourceID(*server.ID)
 		if err != nil {
 			return nil, err
 		}
 
-		iter, err := Client.ListByServerComplete(ctx, id.ResourceGroup, *server.Name)
-		if err != nil {
-			return nil, err
-		}
-
-		for iter.NotDone() {
-			rule := iter.Value()
-			resources = append(resources, terraformutils.NewSimpleResource(
-				*rule.ID,
-				*rule.Name,
-				"azurerm_mysql_virtual_network_rule",
-				g.ProviderName,
-				[]string{}))
-
-			if err := iter.NextWithContext(ctx); err != nil {
+		pager := client.NewListByServerPager(id.ResourceGroup, *server.Name, nil)
+		for pager.More() {
+			page, err := pager.NextPage(ctx)
+			if err != nil {
+				log.Println(err)
 				return nil, err
+			}
+			for _, config := range page.Value {
+				resources = append(resources, terraformutils.NewSimpleResource(
+					*config.ID,
+					*config.Name+"-"+*server.Name,
+					"azurerm_mysql_configuration",
+					g.ProviderName,
+					[]string{"value"}))
 			}
 		}
 	}
@@ -392,34 +306,142 @@ func (g *DatabasesGenerator) createMySQLVirtualNetworkRuleResources(servers []my
 	return resources, nil
 }
 
-func (g *DatabasesGenerator) getPostgreSQLServers() ([]postgresql.Server, error) {
+func (g *DatabasesGenerator) createMySQLDatabaseResources(servers []*armmysql.Server) ([]terraformutils.Resource, error) {
+	var resources []terraformutils.Resource
 	ctx := context.Background()
-	subscriptionID := g.Args["config"].(authentication.Config).SubscriptionID
-	resourceManagerEndpoint := g.Args["config"].(authentication.Config).CustomResourceManagerEndpoint
-	Authorizer := g.Args["authorizer"].(autorest.Authorizer)
-
-	Client := postgresql.NewServersClientWithBaseURI(resourceManagerEndpoint, subscriptionID)
-	Client.Authorizer = Authorizer
-
-	var (
-		Servers postgresql.ServerListResult
-		err     error
-	)
-
-	if rg := g.Args["resource_group"].(string); rg != "" {
-		Servers, err = Client.ListByResourceGroup(ctx, rg)
-	} else {
-		Servers, err = Client.List(ctx)
-	}
-
+	client, err := armmysql.NewDatabasesClient(g.getSubscriptionID(), g.getCredential(), g.armClientOptions())
 	if err != nil {
 		return nil, err
 	}
 
-	return *Servers.Value, nil
+	for _, server := range servers {
+		id, err := ParseAzureResourceID(*server.ID)
+		if err != nil {
+			return nil, err
+		}
+		pager := client.NewListByServerPager(id.ResourceGroup, *server.Name, nil)
+		for pager.More() {
+			page, err := pager.NextPage(ctx)
+			if err != nil {
+				log.Println(err)
+				return nil, err
+			}
+			for _, database := range page.Value {
+				resources = append(resources, terraformutils.NewSimpleResource(
+					*database.ID,
+					*database.Name+"-"+*server.Name,
+					"azurerm_mysql_database",
+					g.ProviderName,
+					[]string{}))
+			}
+		}
+	}
+	return resources, nil
 }
 
-func (g *DatabasesGenerator) createPostgreSQLServerResources(servers []postgresql.Server) ([]terraformutils.Resource, error) {
+func (g *DatabasesGenerator) createMySQLFirewallRuleResources(servers []*armmysql.Server) ([]terraformutils.Resource, error) {
+	var resources []terraformutils.Resource
+	ctx := context.Background()
+	client, err := armmysql.NewFirewallRulesClient(g.getSubscriptionID(), g.getCredential(), g.armClientOptions())
+	if err != nil {
+		return nil, err
+	}
+
+	for _, server := range servers {
+		id, err := ParseAzureResourceID(*server.ID)
+		if err != nil {
+			return nil, err
+		}
+		pager := client.NewListByServerPager(id.ResourceGroup, *server.Name, nil)
+		for pager.More() {
+			page, err := pager.NextPage(ctx)
+			if err != nil {
+				log.Println(err)
+				return nil, err
+			}
+			for _, rule := range page.Value {
+				resources = append(resources, terraformutils.NewSimpleResource(
+					*rule.ID,
+					*rule.Name,
+					"azurerm_mysql_firewall_rule",
+					g.ProviderName,
+					[]string{}))
+			}
+		}
+	}
+
+	return resources, nil
+}
+
+func (g *DatabasesGenerator) createMySQLVirtualNetworkRuleResources(servers []*armmysql.Server) ([]terraformutils.Resource, error) {
+	var resources []terraformutils.Resource
+	ctx := context.Background()
+	client, err := armmysql.NewVirtualNetworkRulesClient(g.getSubscriptionID(), g.getCredential(), g.armClientOptions())
+	if err != nil {
+		return nil, err
+	}
+
+	for _, server := range servers {
+		id, err := ParseAzureResourceID(*server.ID)
+		if err != nil {
+			return nil, err
+		}
+
+		pager := client.NewListByServerPager(id.ResourceGroup, *server.Name, nil)
+		for pager.More() {
+			page, err := pager.NextPage(ctx)
+			if err != nil {
+				log.Println(err)
+				return nil, err
+			}
+			for _, rule := range page.Value {
+				resources = append(resources, terraformutils.NewSimpleResource(
+					*rule.ID,
+					*rule.Name,
+					"azurerm_mysql_virtual_network_rule",
+					g.ProviderName,
+					[]string{}))
+			}
+		}
+	}
+
+	return resources, nil
+}
+
+func (g *DatabasesGenerator) getPostgreSQLServers() ([]*armpostgresql.Server, error) {
+	ctx := context.Background()
+	client, err := armpostgresql.NewServersClient(g.getSubscriptionID(), g.getCredential(), g.armClientOptions())
+	if err != nil {
+		return nil, err
+	}
+
+	var servers []*armpostgresql.Server
+	if rg := g.getResourceGroup(); rg != "" {
+		pager := client.NewListByResourceGroupPager(rg, nil)
+		for pager.More() {
+			page, err := pager.NextPage(ctx)
+			if err != nil {
+				log.Println(err)
+				return nil, err
+			}
+			servers = append(servers, page.Value...)
+		}
+	} else {
+		pager := client.NewListPager(nil)
+		for pager.More() {
+			page, err := pager.NextPage(ctx)
+			if err != nil {
+				log.Println(err)
+				return nil, err
+			}
+			servers = append(servers, page.Value...)
+		}
+	}
+
+	return servers, nil
+}
+
+func (g *DatabasesGenerator) createPostgreSQLServerResources(servers []*armpostgresql.Server) ([]terraformutils.Resource, error) {
 	var resources []terraformutils.Resource
 
 	for _, server := range servers {
@@ -438,172 +460,172 @@ func (g *DatabasesGenerator) createPostgreSQLServerResources(servers []postgresq
 	return resources, nil
 }
 
-func (g *DatabasesGenerator) createPostgreSQLDatabaseResources(servers []postgresql.Server) ([]terraformutils.Resource, error) {
+func (g *DatabasesGenerator) createPostgreSQLDatabaseResources(servers []*armpostgresql.Server) ([]terraformutils.Resource, error) {
 	var resources []terraformutils.Resource
 	ctx := context.Background()
-	subscriptionID := g.Args["config"].(authentication.Config).SubscriptionID
-	resourceManagerEndpoint := g.Args["config"].(authentication.Config).CustomResourceManagerEndpoint
-	Authorizer := g.Args["authorizer"].(autorest.Authorizer)
-
-	Client := postgresql.NewDatabasesClientWithBaseURI(resourceManagerEndpoint, subscriptionID)
-	Client.Authorizer = Authorizer
-
-	for _, server := range servers {
-		id, err := ParseAzureResourceID(*server.ID)
-		if err != nil {
-			return nil, err
-		}
-		databases, err := Client.ListByServer(ctx, id.ResourceGroup, *server.Name)
-		if err != nil {
-			return nil, err
-		}
-
-		for _, database := range *databases.Value {
-			resources = append(resources, terraformutils.NewSimpleResource(
-				*database.ID,
-				*database.Name+"-"+*server.Name,
-				"azurerm_postgresql_database",
-				g.ProviderName,
-				[]string{}))
-		}
+	client, err := armpostgresql.NewDatabasesClient(g.getSubscriptionID(), g.getCredential(), g.armClientOptions())
+	if err != nil {
+		return nil, err
 	}
-	return resources, nil
-}
-
-func (g *DatabasesGenerator) createPostgreSQLConfigurationResources(servers []postgresql.Server) ([]terraformutils.Resource, error) {
-	var resources []terraformutils.Resource
-	ctx := context.Background()
-	subscriptionID := g.Args["config"].(authentication.Config).SubscriptionID
-	resourceManagerEndpoint := g.Args["config"].(authentication.Config).CustomResourceManagerEndpoint
-	Authorizer := g.Args["authorizer"].(autorest.Authorizer)
-	Client := postgresql.NewConfigurationsClientWithBaseURI(resourceManagerEndpoint, subscriptionID)
-	Client.Authorizer = Authorizer
 
 	for _, server := range servers {
 		id, err := ParseAzureResourceID(*server.ID)
 		if err != nil {
 			return nil, err
 		}
-		configs, err := Client.ListByServer(ctx, id.ResourceGroup, *server.Name)
-		if err != nil {
-			return nil, err
-		}
-
-		for _, config := range *configs.Value {
-			resources = append(resources, terraformutils.NewSimpleResource(
-				*config.ID,
-				*config.Name+"-"+*server.Name,
-				"azurerm_postgresql_configuration",
-				g.ProviderName,
-				[]string{"value"}))
-		}
-	}
-	return resources, nil
-}
-
-func (g *DatabasesGenerator) createPostgreSQLFirewallRuleResources(servers []postgresql.Server) ([]terraformutils.Resource, error) {
-	var resources []terraformutils.Resource
-	ctx := context.Background()
-	subscriptionID := g.Args["config"].(authentication.Config).SubscriptionID
-	resourceManagerEndpoint := g.Args["config"].(authentication.Config).CustomResourceManagerEndpoint
-	Authorizer := g.Args["authorizer"].(autorest.Authorizer)
-
-	Client := postgresql.NewFirewallRulesClientWithBaseURI(resourceManagerEndpoint, subscriptionID)
-	Client.Authorizer = Authorizer
-
-	for _, server := range servers {
-		id, err := ParseAzureResourceID(*server.ID)
-		if err != nil {
-			return nil, err
-		}
-		rules, err := Client.ListByServer(ctx, id.ResourceGroup, *server.Name)
-		if err != nil {
-			return nil, err
-		}
-
-		for _, rule := range *rules.Value {
-			resources = append(resources, terraformutils.NewSimpleResource(
-				*rule.ID,
-				*rule.Name,
-				"azurerm_postgresql_firewall_rule",
-				g.ProviderName,
-				[]string{}))
-		}
-	}
-	return resources, nil
-}
-
-func (g *DatabasesGenerator) createPostgreSQLVirtualNetworkRuleResources(servers []postgresql.Server) ([]terraformutils.Resource, error) {
-	var resources []terraformutils.Resource
-	ctx := context.Background()
-	subscriptionID := g.Args["config"].(authentication.Config).SubscriptionID
-	resourceManagerEndpoint := g.Args["config"].(authentication.Config).CustomResourceManagerEndpoint
-	Authorizer := g.Args["authorizer"].(autorest.Authorizer)
-
-	Client := postgresql.NewVirtualNetworkRulesClientWithBaseURI(resourceManagerEndpoint, subscriptionID)
-	Client.Authorizer = Authorizer
-
-	for _, server := range servers {
-		id, err := ParseAzureResourceID(*server.ID)
-		if err != nil {
-			return nil, err
-		}
-		rulePages, err := Client.ListByServerComplete(ctx, id.ResourceGroup, *server.Name)
-		if err != nil {
-			return nil, err
-		}
-
-		for rulePages.NotDone() {
-			rule := rulePages.Value()
-			resources = append(resources, terraformutils.NewSimpleResource(
-				*rule.ID,
-				*rule.Name,
-				"azurerm_postgresql_virtual_network_rule",
-				g.ProviderName,
-				[]string{}))
-
-			if err := rulePages.NextWithContext(ctx); err != nil {
+		pager := client.NewListByServerPager(id.ResourceGroup, *server.Name, nil)
+		for pager.More() {
+			page, err := pager.NextPage(ctx)
+			if err != nil {
+				log.Println(err)
 				return nil, err
+			}
+			for _, database := range page.Value {
+				resources = append(resources, terraformutils.NewSimpleResource(
+					*database.ID,
+					*database.Name+"-"+*server.Name,
+					"azurerm_postgresql_database",
+					g.ProviderName,
+					[]string{}))
 			}
 		}
 	}
 	return resources, nil
 }
 
-func (g *DatabasesGenerator) getSQLServers() ([]sql.Server, error) {
-	var servers []sql.Server
+func (g *DatabasesGenerator) createPostgreSQLConfigurationResources(servers []*armpostgresql.Server) ([]terraformutils.Resource, error) {
+	var resources []terraformutils.Resource
 	ctx := context.Background()
-	subscriptionID := g.Args["config"].(authentication.Config).SubscriptionID
-	resourceManagerEndpoint := g.Args["config"].(authentication.Config).CustomResourceManagerEndpoint
-	Authorizer := g.Args["authorizer"].(autorest.Authorizer)
-
-	Client := sql.NewServersClientWithBaseURI(resourceManagerEndpoint, subscriptionID)
-	Client.Authorizer = Authorizer
-
-	var (
-		ServerPages sql.ServerListResultPage
-		err         error
-	)
-
-	if rg := g.Args["resource_group"].(string); rg != "" {
-		ServerPages, err = Client.ListByResourceGroup(ctx, rg)
-	} else {
-		ServerPages, err = Client.List(ctx)
-	}
+	client, err := armpostgresql.NewConfigurationsClient(g.getSubscriptionID(), g.getCredential(), g.armClientOptions())
 	if err != nil {
 		return nil, err
 	}
-	for ServerPages.NotDone() {
-		servers = append(servers, ServerPages.Values()...)
-		if err := ServerPages.NextWithContext(ctx); err != nil {
+
+	for _, server := range servers {
+		id, err := ParseAzureResourceID(*server.ID)
+		if err != nil {
 			return nil, err
+		}
+		pager := client.NewListByServerPager(id.ResourceGroup, *server.Name, nil)
+		for pager.More() {
+			page, err := pager.NextPage(ctx)
+			if err != nil {
+				log.Println(err)
+				return nil, err
+			}
+			for _, config := range page.Value {
+				resources = append(resources, terraformutils.NewSimpleResource(
+					*config.ID,
+					*config.Name+"-"+*server.Name,
+					"azurerm_postgresql_configuration",
+					g.ProviderName,
+					[]string{"value"}))
+			}
+		}
+	}
+	return resources, nil
+}
+
+func (g *DatabasesGenerator) createPostgreSQLFirewallRuleResources(servers []*armpostgresql.Server) ([]terraformutils.Resource, error) {
+	var resources []terraformutils.Resource
+	ctx := context.Background()
+	client, err := armpostgresql.NewFirewallRulesClient(g.getSubscriptionID(), g.getCredential(), g.armClientOptions())
+	if err != nil {
+		return nil, err
+	}
+
+	for _, server := range servers {
+		id, err := ParseAzureResourceID(*server.ID)
+		if err != nil {
+			return nil, err
+		}
+		pager := client.NewListByServerPager(id.ResourceGroup, *server.Name, nil)
+		for pager.More() {
+			page, err := pager.NextPage(ctx)
+			if err != nil {
+				log.Println(err)
+				return nil, err
+			}
+			for _, rule := range page.Value {
+				resources = append(resources, terraformutils.NewSimpleResource(
+					*rule.ID,
+					*rule.Name,
+					"azurerm_postgresql_firewall_rule",
+					g.ProviderName,
+					[]string{}))
+			}
+		}
+	}
+	return resources, nil
+}
+
+func (g *DatabasesGenerator) createPostgreSQLVirtualNetworkRuleResources(servers []*armpostgresql.Server) ([]terraformutils.Resource, error) {
+	var resources []terraformutils.Resource
+	ctx := context.Background()
+	client, err := armpostgresql.NewVirtualNetworkRulesClient(g.getSubscriptionID(), g.getCredential(), g.armClientOptions())
+	if err != nil {
+		return nil, err
+	}
+
+	for _, server := range servers {
+		id, err := ParseAzureResourceID(*server.ID)
+		if err != nil {
+			return nil, err
+		}
+		pager := client.NewListByServerPager(id.ResourceGroup, *server.Name, nil)
+		for pager.More() {
+			page, err := pager.NextPage(ctx)
+			if err != nil {
+				log.Println(err)
+				return nil, err
+			}
+			for _, rule := range page.Value {
+				resources = append(resources, terraformutils.NewSimpleResource(
+					*rule.ID,
+					*rule.Name,
+					"azurerm_postgresql_virtual_network_rule",
+					g.ProviderName,
+					[]string{}))
+			}
+		}
+	}
+	return resources, nil
+}
+
+func (g *DatabasesGenerator) getSQLServers() ([]*armsql.Server, error) {
+	var servers []*armsql.Server
+	ctx := context.Background()
+	client, err := armsql.NewServersClient(g.getSubscriptionID(), g.getCredential(), g.armClientOptions())
+	if err != nil {
+		return nil, err
+	}
+
+	if rg := g.getResourceGroup(); rg != "" {
+		pager := client.NewListByResourceGroupPager(rg, nil)
+		for pager.More() {
+			page, err := pager.NextPage(ctx)
+			if err != nil {
+				log.Println(err)
+				return nil, err
+			}
+			servers = append(servers, page.Value...)
+		}
+	} else {
+		pager := client.NewListPager(nil)
+		for pager.More() {
+			page, err := pager.NextPage(ctx)
+			if err != nil {
+				log.Println(err)
+				return nil, err
+			}
+			servers = append(servers, page.Value...)
 		}
 	}
 
 	return servers, nil
 }
 
-func (g *DatabasesGenerator) createSQLServerResources(servers []sql.Server) ([]terraformutils.Resource, error) {
+func (g *DatabasesGenerator) createSQLServerResources(servers []*armsql.Server) ([]terraformutils.Resource, error) {
 	var resources []terraformutils.Resource
 
 	for _, server := range servers {
@@ -622,187 +644,145 @@ func (g *DatabasesGenerator) createSQLServerResources(servers []sql.Server) ([]t
 	return resources, nil
 }
 
-func (g *DatabasesGenerator) createSQLDatabaseResources(servers []sql.Server) ([]terraformutils.Resource, error) {
+func (g *DatabasesGenerator) createSQLDatabaseResources(servers []*armsql.Server) ([]terraformutils.Resource, error) {
 	var resources []terraformutils.Resource
 	ctx := context.Background()
-	subscriptionID := g.Args["config"].(authentication.Config).SubscriptionID
-	resourceManagerEndpoint := g.Args["config"].(authentication.Config).CustomResourceManagerEndpoint
-	Authorizer := g.Args["authorizer"].(autorest.Authorizer)
-
-	Client := sql.NewDatabasesClientWithBaseURI(resourceManagerEndpoint, subscriptionID)
-	Client.Authorizer = Authorizer
-
-	for _, server := range servers {
-		id, err := ParseAzureResourceID(*server.ID)
-		if err != nil {
-			return nil, err
-		}
-		databases, err := Client.ListByServer(ctx, id.ResourceGroup, *server.Name, "", "")
-		if err != nil {
-			return nil, err
-		}
-
-		for _, database := range *databases.Value {
-			resources = append(resources, terraformutils.NewSimpleResource(
-				*database.ID,
-				*database.Name+"-"+*server.Name,
-				"azurerm_mssql_database",
-				g.ProviderName,
-				[]string{}))
-		}
+	client, err := armsql.NewDatabasesClient(g.getSubscriptionID(), g.getCredential(), g.armClientOptions())
+	if err != nil {
+		return nil, err
 	}
-	return resources, nil
-}
-
-func (g *DatabasesGenerator) createSQLFirewallRuleResources(servers []sql.Server) ([]terraformutils.Resource, error) {
-	var resources []terraformutils.Resource
-	ctx := context.Background()
-	subscriptionID := g.Args["config"].(authentication.Config).SubscriptionID
-	resourceManagerEndpoint := g.Args["config"].(authentication.Config).CustomResourceManagerEndpoint
-	Authorizer := g.Args["authorizer"].(autorest.Authorizer)
-
-	Client := sql.NewFirewallRulesClientWithBaseURI(resourceManagerEndpoint, subscriptionID)
-	Client.Authorizer = Authorizer
 
 	for _, server := range servers {
 		id, err := ParseAzureResourceID(*server.ID)
 		if err != nil {
 			return nil, err
 		}
-		rules, err := Client.ListByServer(ctx, id.ResourceGroup, *server.Name)
-		if err != nil {
-			return nil, err
-		}
-
-		for _, rule := range *rules.Value {
-			resources = append(resources, terraformutils.NewSimpleResource(
-				*rule.ID,
-				*rule.Name,
-				"azurerm_mssql_firewall_rule",
-				g.ProviderName,
-				[]string{}))
-		}
-	}
-	return resources, nil
-}
-
-func (g *DatabasesGenerator) createSQLVirtualNetworkRuleResources(servers []sql.Server) ([]terraformutils.Resource, error) {
-	var resources []terraformutils.Resource
-	ctx := context.Background()
-	subscriptionID := g.Args["config"].(authentication.Config).SubscriptionID
-	resourceManagerEndpoint := g.Args["config"].(authentication.Config).CustomResourceManagerEndpoint
-	Authorizer := g.Args["authorizer"].(autorest.Authorizer)
-
-	Client := sql.NewVirtualNetworkRulesClientWithBaseURI(resourceManagerEndpoint, subscriptionID)
-	Client.Authorizer = Authorizer
-
-	for _, server := range servers {
-		id, err := ParseAzureResourceID(*server.ID)
-		if err != nil {
-			return nil, err
-		}
-		ruleIter, err := Client.ListByServerComplete(ctx, id.ResourceGroup, *server.Name)
-		if err != nil {
-			return nil, err
-		}
-
-		for ruleIter.NotDone() {
-			rule := ruleIter.Value()
-			resources = append(resources, terraformutils.NewSimpleResource(
-				*rule.ID,
-				*rule.Name,
-				"azurerm_sql_virtual_network_rule",
-				g.ProviderName,
-				[]string{}))
-
-			if err := ruleIter.NextWithContext(ctx); err != nil {
+		pager := client.NewListByServerPager(id.ResourceGroup, *server.Name, nil)
+		for pager.More() {
+			page, err := pager.NextPage(ctx)
+			if err != nil {
+				log.Println(err)
 				return nil, err
+			}
+			for _, database := range page.Value {
+				resources = append(resources, terraformutils.NewSimpleResource(
+					*database.ID,
+					*database.Name+"-"+*server.Name,
+					"azurerm_mssql_database",
+					g.ProviderName,
+					[]string{}))
 			}
 		}
 	}
 	return resources, nil
 }
 
-func (g *DatabasesGenerator) createSQLElasticPoolResources(servers []sql.Server) ([]terraformutils.Resource, error) {
+func (g *DatabasesGenerator) createSQLFirewallRuleResources(servers []*armsql.Server) ([]terraformutils.Resource, error) {
 	var resources []terraformutils.Resource
 	ctx := context.Background()
-	subscriptionID := g.Args["config"].(authentication.Config).SubscriptionID
-	resourceManagerEndpoint := g.Args["config"].(authentication.Config).CustomResourceManagerEndpoint
-	Authorizer := g.Args["authorizer"].(autorest.Authorizer)
-
-	Client := sql.NewElasticPoolsClientWithBaseURI(resourceManagerEndpoint, subscriptionID)
-	Client.Authorizer = Authorizer
-
-	for _, server := range servers {
-		id, err := ParseAzureResourceID(*server.ID)
-		if err != nil {
-			return nil, err
-		}
-		pools, err := Client.ListByServer(ctx, id.ResourceGroup, *server.Name)
-		if err != nil {
-			return nil, err
-		}
-
-		for _, pool := range *pools.Value {
-			resources = append(resources, terraformutils.NewSimpleResource(
-				*pool.ID,
-				*pool.Name,
-				"azurerm_sql_elasticpool",
-				g.ProviderName,
-				[]string{}))
-		}
+	client, err := armsql.NewFirewallRulesClient(g.getSubscriptionID(), g.getCredential(), g.armClientOptions())
+	if err != nil {
+		return nil, err
 	}
-	return resources, nil
-}
-
-func (g *DatabasesGenerator) createSQLFailoverResources(servers []sql.Server) ([]terraformutils.Resource, error) {
-	var resources []terraformutils.Resource
-	ctx := context.Background()
-	subscriptionID := g.Args["config"].(authentication.Config).SubscriptionID
-	resourceManagerEndpoint := g.Args["config"].(authentication.Config).CustomResourceManagerEndpoint
-	Authorizer := g.Args["authorizer"].(autorest.Authorizer)
-
-	Client := sql.NewFailoverGroupsClientWithBaseURI(resourceManagerEndpoint, subscriptionID)
-	Client.Authorizer = Authorizer
 
 	for _, server := range servers {
 		id, err := ParseAzureResourceID(*server.ID)
 		if err != nil {
 			return nil, err
 		}
-
-		iter, err := Client.ListByServerComplete(ctx, id.ResourceGroup, *server.Name)
-		if err != nil {
-			return nil, err
-		}
-
-		for iter.NotDone() {
-			failoverGroup := iter.Value()
-
-			resources = append(resources, terraformutils.NewSimpleResource(
-				*failoverGroup.ID,
-				*failoverGroup.Name,
-				"azurerm_sql_failover_group",
-				g.ProviderName,
-				[]string{}))
-
-			if err := iter.NextWithContext(ctx); err != nil {
+		pager := client.NewListByServerPager(id.ResourceGroup, *server.Name, nil)
+		for pager.More() {
+			page, err := pager.NextPage(ctx)
+			if err != nil {
+				log.Println(err)
 				return nil, err
+			}
+			for _, rule := range page.Value {
+				resources = append(resources, terraformutils.NewSimpleResource(
+					*rule.ID,
+					*rule.Name,
+					"azurerm_mssql_firewall_rule",
+					g.ProviderName,
+					[]string{}))
 			}
 		}
 	}
 	return resources, nil
 }
 
-func (g *DatabasesGenerator) createSQLADAdministratorResources(servers []sql.Server) ([]terraformutils.Resource, error) {
+func (g *DatabasesGenerator) createSQLVirtualNetworkRuleResources(servers []*armsql.Server) ([]terraformutils.Resource, error) {
 	var resources []terraformutils.Resource
 	ctx := context.Background()
-	subscriptionID := g.Args["config"].(authentication.Config).SubscriptionID
-	resourceManagerEndpoint := g.Args["config"].(authentication.Config).CustomResourceManagerEndpoint
-	Authorizer := g.Args["authorizer"].(autorest.Authorizer)
+	client, err := armsql.NewVirtualNetworkRulesClient(g.getSubscriptionID(), g.getCredential(), g.armClientOptions())
+	if err != nil {
+		return nil, err
+	}
 
-	Client := sql.NewServerAzureADAdministratorsClientWithBaseURI(resourceManagerEndpoint, subscriptionID)
-	Client.Authorizer = Authorizer
+	for _, server := range servers {
+		id, err := ParseAzureResourceID(*server.ID)
+		if err != nil {
+			return nil, err
+		}
+		pager := client.NewListByServerPager(id.ResourceGroup, *server.Name, nil)
+		for pager.More() {
+			page, err := pager.NextPage(ctx)
+			if err != nil {
+				log.Println(err)
+				return nil, err
+			}
+			for _, rule := range page.Value {
+				resources = append(resources, terraformutils.NewSimpleResource(
+					*rule.ID,
+					*rule.Name,
+					"azurerm_sql_virtual_network_rule",
+					g.ProviderName,
+					[]string{}))
+			}
+		}
+	}
+	return resources, nil
+}
+
+func (g *DatabasesGenerator) createSQLElasticPoolResources(servers []*armsql.Server) ([]terraformutils.Resource, error) {
+	var resources []terraformutils.Resource
+	ctx := context.Background()
+	client, err := armsql.NewElasticPoolsClient(g.getSubscriptionID(), g.getCredential(), g.armClientOptions())
+	if err != nil {
+		return nil, err
+	}
+
+	for _, server := range servers {
+		id, err := ParseAzureResourceID(*server.ID)
+		if err != nil {
+			return nil, err
+		}
+		pager := client.NewListByServerPager(id.ResourceGroup, *server.Name, nil)
+		for pager.More() {
+			page, err := pager.NextPage(ctx)
+			if err != nil {
+				log.Println(err)
+				return nil, err
+			}
+			for _, pool := range page.Value {
+				resources = append(resources, terraformutils.NewSimpleResource(
+					*pool.ID,
+					*pool.Name,
+					"azurerm_sql_elasticpool",
+					g.ProviderName,
+					[]string{}))
+			}
+		}
+	}
+	return resources, nil
+}
+
+func (g *DatabasesGenerator) createSQLFailoverResources(servers []*armsql.Server) ([]terraformutils.Resource, error) {
+	var resources []terraformutils.Resource
+	ctx := context.Background()
+	client, err := armsql.NewFailoverGroupsClient(g.getSubscriptionID(), g.getCredential(), g.armClientOptions())
+	if err != nil {
+		return nil, err
+	}
 
 	for _, server := range servers {
 		id, err := ParseAzureResourceID(*server.ID)
@@ -810,18 +790,55 @@ func (g *DatabasesGenerator) createSQLADAdministratorResources(servers []sql.Ser
 			return nil, err
 		}
 
-		administrators, err := Client.ListByServer(ctx, id.ResourceGroup, *server.Name)
+		pager := client.NewListByServerPager(id.ResourceGroup, *server.Name, nil)
+		for pager.More() {
+			page, err := pager.NextPage(ctx)
+			if err != nil {
+				log.Println(err)
+				return nil, err
+			}
+			for _, failoverGroup := range page.Value {
+				resources = append(resources, terraformutils.NewSimpleResource(
+					*failoverGroup.ID,
+					*failoverGroup.Name,
+					"azurerm_sql_failover_group",
+					g.ProviderName,
+					[]string{}))
+			}
+		}
+	}
+	return resources, nil
+}
+
+func (g *DatabasesGenerator) createSQLADAdministratorResources(servers []*armsql.Server) ([]terraformutils.Resource, error) {
+	var resources []terraformutils.Resource
+	ctx := context.Background()
+	client, err := armsql.NewServerAzureADAdministratorsClient(g.getSubscriptionID(), g.getCredential(), g.armClientOptions())
+	if err != nil {
+		return nil, err
+	}
+
+	for _, server := range servers {
+		id, err := ParseAzureResourceID(*server.ID)
 		if err != nil {
 			return nil, err
 		}
 
-		for _, administrator := range *administrators.Value {
-			resources = append(resources, terraformutils.NewSimpleResource(
-				*administrator.ID,
-				*administrator.Name,
-				"azurerm_sql_active_directory_administrator",
-				g.ProviderName,
-				[]string{}))
+		pager := client.NewListByServerPager(id.ResourceGroup, *server.Name, nil)
+		for pager.More() {
+			page, err := pager.NextPage(ctx)
+			if err != nil {
+				log.Println(err)
+				return nil, err
+			}
+			for _, administrator := range page.Value {
+				resources = append(resources, terraformutils.NewSimpleResource(
+					*administrator.ID,
+					*administrator.Name,
+					"azurerm_sql_active_directory_administrator",
+					g.ProviderName,
+					[]string{}))
+			}
 		}
 	}
 	return resources, nil
@@ -848,7 +865,7 @@ func (g *DatabasesGenerator) InitResources() error {
 		return err
 	}
 
-	mariadbFunctions := []func([]mariadb.Server) ([]terraformutils.Resource, error){
+	mariadbFunctions := []func([]*armmariadb.Server) ([]terraformutils.Resource, error){
 		g.createMariaDBServerResources,
 		g.createMariaDBDatabaseResources,
 		g.createMariaDBConfigurationResources,
@@ -856,7 +873,7 @@ func (g *DatabasesGenerator) InitResources() error {
 		g.createMariaDBVirtualNetworkRuleResources,
 	}
 
-	mysqlFunctions := []func([]mysql.Server) ([]terraformutils.Resource, error){
+	mysqlFunctions := []func([]*armmysql.Server) ([]terraformutils.Resource, error){
 		g.createMySQLServerResources,
 		g.createMySQLDatabaseResources,
 		g.createMySQLConfigurationResources,
@@ -864,7 +881,7 @@ func (g *DatabasesGenerator) InitResources() error {
 		g.createMySQLVirtualNetworkRuleResources,
 	}
 
-	postgresqlFunctions := []func([]postgresql.Server) ([]terraformutils.Resource, error){
+	postgresqlFunctions := []func([]*armpostgresql.Server) ([]terraformutils.Resource, error){
 		g.createPostgreSQLServerResources,
 		g.createPostgreSQLDatabaseResources,
 		g.createPostgreSQLConfigurationResources,
@@ -872,7 +889,7 @@ func (g *DatabasesGenerator) InitResources() error {
 		g.createPostgreSQLVirtualNetworkRuleResources,
 	}
 
-	sqlFunctions := []func([]sql.Server) ([]terraformutils.Resource, error){
+	sqlFunctions := []func([]*armsql.Server) ([]terraformutils.Resource, error){
 		g.createSQLServerResources,
 		g.createSQLDatabaseResources,
 		g.createSQLADAdministratorResources,
