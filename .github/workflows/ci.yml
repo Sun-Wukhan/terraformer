@@ -3,7 +3,9 @@ name: ci
 # Single CI pipeline with proper stages (jobs), replacing the old
 # one-workflow-per-check layout:
 #   lint        - golangci-lint over the whole repo (fast feedback)
-#   unit        - go build + go test ./... on ubuntu and macos
+#   unit        - go build + go test ./... on ubuntu (macOS leg removed
+#                 Oct 2026: GitHub's macOS arm64 runners repeatedly failed
+#                 to even start the job — capacity, not code)
 #   integration - live terraform/tofu CLI tests, no cloud credentials
 #   azure       - azure provider build/vet/unit tests, credential-free
 #   azure-live  - read-only live Azure smoke test, only with AZURE_* secrets
@@ -34,10 +36,7 @@ jobs:
   unit:
     name: unit tests
     needs: lint
-    strategy:
-      matrix:
-        platform: [ubuntu-latest, macos-latest]
-    runs-on: ${{ matrix.platform }}
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Install Go
