@@ -1,39 +1,53 @@
-> **Note:** This is a community-maintained continuation of the archived [GoogleCloudPlatform/terraformer](https://github.com/GoogleCloudPlatform/terraformer), revived with support for modern Terraform and OpenTofu CLIs. See [REVIVAL_ROADMAP.md](REVIVAL_ROADMAP.md) for the plan.
+# Terraformer — community revival
+[![ci](https://github.com/Sun-Wukhan/terraformer/actions/workflows/ci.yml/badge.svg)](https://github.com/Sun-Wukhan/terraformer/actions/workflows/ci.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/Sun-Wukhan/terraformer)](https://goreportcard.com/report/github.com/Sun-Wukhan/terraformer)
+[![Release](https://img.shields.io/github/v/release/Sun-Wukhan/terraformer)](https://github.com/Sun-Wukhan/terraformer/releases)
 
-# Terraformer
-[![tests](https://github.com/GoogleCloudPlatform/terraformer/actions/workflows/test.yml/badge.svg)](https://github.com/GoogleCloudPlatform/terraformer/actions/workflows/test.yml)
-[![linter](https://github.com/GoogleCloudPlatform/terraformer/actions/workflows/linter.yml/badge.svg)](https://github.com/GoogleCloudPlatform/terraformer/actions/workflows/linter.yml)
-[![Go Report Card](https://goreportcard.com/badge/github.com/GoogleCloudPlatform/terraformer)](https://goreportcard.com/report/github.com/GoogleCloudPlatform/terraformer)
-[![AUR package](https://img.shields.io/aur/version/terraformer)](https://aur.archlinux.org/packages/terraformer/)
-[![Homebrew](https://img.shields.io/badge/dynamic/json.svg?url=https://formulae.brew.sh/api/formula/terraformer.json&query=$.versions.stable&label=homebrew)](https://formulae.brew.sh/formula/terraformer)
-
-**Revived fork.** This is a community revival of the archived
+**Terraformer is back.** This is a community-maintained revival of the archived
 [GoogleCloudPlatform/terraformer](https://github.com/GoogleCloudPlatform/terraformer)
-(archived March 16, 2026). The original project is unmaintained; this fork
-picks up where it left off.
+(14.5k stars, archived March 2026). The original died when its Terraform 0.12
+internals could no longer talk to modern provider binaries — this fork replaces
+that layer entirely.
 
-What changed in the revival:
-*   The provider communication layer no longer uses Terraform 0.12's go-plugin
-    gRPC internals (which could not talk to modern provider binaries). It now
-    shells out to a modern Terraform or OpenTofu CLI, so it works with the
-    latest provider releases (including provider protocol 6).
-*   Provider binaries are auto-installed via `<cli> init` — no more
-    hand-placed provider plugins.
-*   State refresh is done in bulk with generated `import` blocks + `apply` +
-    `show -json` instead of per-resource gRPC calls.
+A CLI tool that generates `tf`/`json` and `tfstate` files from your existing
+infrastructure (reverse Terraform). Point it at your cloud account, get back
+real, apply-ready Terraform code.
 
-Prerequisites:
-*   `terraform >= 1.5` or `tofu` (OpenTofu) on your `PATH`
-    (override with the `TERRAFORMER_TF_BIN` environment variable).
-*   The `github.com/hashicorp/terraform v0.12.31` module remains in `go.mod`
-    as a types-only dependency (schema/state types); none of its runtime or
-    plugin code is used anymore.
+## Quickstart
 
-A CLI tool that generates `tf`/`json` and `tfstate` files based on existing infrastructure
-(reverse Terraform).
+```bash
+# Install (Linux amd64; see Releases for macOS / arm64)
+curl -L https://github.com/Sun-Wukhan/terraformer/releases/latest/download/terraformer-all-linux-amd64 -o terraformer
+chmod +x terraformer
 
-*   Disclaimer: This is not an official Google product
-*   Created by: Waze SRE
+# Import your AWS VPCs and subnets into Terraform files
+./terraformer import aws --resources=vpc,subnet --regions=us-east-1
+```
+
+Prerequisites: `terraform >= 1.5` or OpenTofu's `tofu` on your `PATH`
+(override with `TERRAFORMER_TF_BIN`).
+
+## What's new in the revival
+
+* **Modern provider support** — the provider layer now shells out to a real
+  Terraform / OpenTofu CLI instead of TF 0.12's go-plugin gRPC internals, so it
+  works with current provider releases (including protocol 6).
+* **Provider auto-install** — binaries come from `<cli> init`, no more
+  hand-placed plugins.
+* **OpenTofu support** — first-class, tested in CI.
+* **Azure rebuilt on the track-2 SDK** — all 33 Azure services migrated off the
+  dead track-1 libraries.
+* **Modern HCL output** — no legacy `${...}` interpolation, valid
+  `terraform { required_providers { ... } }` blocks.
+* **CI you can trust** — lint, unit tests (Linux + macOS), live CLI integration
+  tests over real providers, and Azure mock tests on every push.
+
+See [REVIVAL_ROADMAP.md](REVIVAL_ROADMAP.md) for what's next, and
+[Discussions](https://github.com/Sun-Wukhan/terraformer/discussions) to request
+a provider or report a rough edge.
+
+*   Disclaimer: This is not an official Google product (and never was more than
+    a Waze SRE side project — created by Waze SRE).
 
 ![Waze SRE logo](assets/waze-sre-logo.png)
 
