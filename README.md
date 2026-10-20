@@ -39,7 +39,7 @@ Prerequisites: `terraform >= 1.5` or OpenTofu's `tofu` on your `PATH`
   dead track-1 libraries.
 * **Modern HCL output** — no legacy `${...}` interpolation, valid
   `terraform { required_providers { ... } }` blocks.
-* **CI you can trust** — lint, unit tests (Linux + macOS), live CLI integration
+* **CI you can trust** — lint, unit tests, live CLI integration
   tests over real providers, and Azure mock tests on every push.
 
 See [REVIVAL_ROADMAP.md](REVIVAL_ROADMAP.md) for what's next, and
