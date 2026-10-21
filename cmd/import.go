@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -54,6 +55,7 @@ type ImportOptions struct {
 	NoSort        bool
 	RetryCount    int
 	RetrySleepMs  int
+	Strict        bool
 }
 
 const DefaultPathPattern = "{output}/{provider}/{service}/"
@@ -93,24 +95,50 @@ func Import(provider terraformutils.ProviderGenerator, options ImportOptions, ar
 	}
 	defer providerWrapper.Kill()
 	providerMapping := terraformutils.NewProvidersMapping(provider)
+	report := terraformutils.NewImportReport()
 
-	err = initAllServicesResources(providerMapping, options, args, providerWrapper)
+	err = initAllServicesResources(providerMapping, options, args, providerWrapper, report)
 	if err != nil {
 		return err
 	}
 
-	err = terraformutils.RefreshResourcesByProvider(providerMapping, providerWrapper)
+	err = terraformutils.RefreshResourcesByProvider(providerMapping, providerWrapper, report)
 	if err != nil {
 		return err
 	}
 
-	providerMapping.ConvertTFStates(providerWrapper)
+	providerMapping.ConvertTFStates(providerWrapper, report)
 	// change structs with additional data for each resource
 	providerMapping.CleanupProviders()
 
 	err = importFromPlan(providerMapping, options, args)
+	if err != nil {
+		return err
+	}
 
-	return err
+	// Final accounting: count what actually landed in the output, print the
+	// summary, and persist failures so a partial import cannot pass silently.
+	for _, resources := range providerMapping.GetResourcesByService() {
+		for i := range resources {
+			if resources[i].InstanceInfo != nil {
+				report.RecordImported(resources[i].InstanceInfo.Type, 1)
+			}
+		}
+	}
+	report.PrintSummary(provider.GetName())
+	if report.HasFailures() {
+		failuresPath := filepath.Join(Path(options.PathPattern, provider.GetName(), "", options.PathOutput), "terraformer-failures.json")
+		if werr := report.WriteFailuresJSON(failuresPath, provider.GetName()); werr != nil {
+			log.Printf("WARN: could not write failures report: %v", werr)
+		} else {
+			log.Printf("Failure details written to %s", failuresPath)
+		}
+		if options.Strict {
+			return fmt.Errorf("import finished with %d failure(s) (--strict); see %s", report.FailureCount(), failuresPath)
+		}
+	}
+
+	return nil
 }
 
 func initOptionsAndWrapper(provider terraformutils.ProviderGenerator, options ImportOptions, args []string) (*providerwrapper.ProviderWrapper, ImportOptions, error) {
@@ -149,7 +177,7 @@ func initOptionsAndWrapper(provider terraformutils.ProviderGenerator, options Im
 	return providerWrapper, options, nil
 }
 
-func initAllServicesResources(providersMapping *terraformutils.ProvidersMapping, options ImportOptions, args []string, providerWrapper *providerwrapper.ProviderWrapper) error {
+func initAllServicesResources(providersMapping *terraformutils.ProvidersMapping, options ImportOptions, args []string, providerWrapper *providerwrapper.ProviderWrapper, report *terraformutils.ImportReport) error {
 	numOfResources := len(options.Resources)
 	var wg sync.WaitGroup
 	wg.Add(numOfResources)
@@ -165,6 +193,11 @@ func initAllServicesResources(providersMapping *terraformutils.ProvidersMapping,
 		err = initServiceResources(service, serviceProvider, options, providerWrapper)
 		if err != nil {
 			failedServices = append(failedServices, service)
+			report.RecordFailure(terraformutils.ImportFailure{
+				Stage:   terraformutils.StageEnumerate,
+				Service: service,
+				Error:   err.Error(),
+			})
 		}
 	}
 
@@ -407,4 +440,5 @@ func baseProviderFlags(flag *pflag.FlagSet, options *ImportOptions, sampleRes, s
 	flag.StringVarP(&options.Output, "output", "O", "hcl", "output format hcl or json")
 	flag.IntVarP(&options.RetryCount, "retry-number", "n", 5, "number of retries to perform when refresh fails")
 	flag.IntVarP(&options.RetrySleepMs, "retry-sleep-ms", "m", 300, "time in ms to sleep between retries")
+	flag.BoolVar(&options.Strict, "strict", false, "exit with an error if any service or resource failed to import")
 }
