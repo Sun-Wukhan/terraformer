@@ -53,8 +53,9 @@ const (
 //  4. Resources still missing from state get one single
 //     `<cli> import <addr> <id>` attempt each, followed by a final
 //     `show -json` pass.
-//  5. Resources that never made it into state are logged and dropped, the
-//     same graceful degradation the old per-resource refresh had.
+//  5. Resources that never made it into state are recorded in the
+//     ImportReport and dropped, the same graceful degradation the old
+//     per-resource refresh had — but no longer silently.
 
 // importTarget pairs a resource with its traversal-safe import label and
 // full address (e.g. aws_instance.tfer__foo) used in the generated import.tf.
@@ -115,11 +116,27 @@ func renderImportConfig(targets []importTarget) string {
 }
 
 // bulkImportResources refreshes every resource's InstanceState via the CLI and
-// returns the subset that was successfully refreshed.
-func bulkImportResources(p *providerwrapper.ProviderWrapper, resources []*Resource) ([]*Resource, error) {
+// returns the subset that was successfully refreshed. Every resource that is
+// skipped or dropped along the way is recorded in report (nil-safe), with
+// serviceOf attributing resources to their service for the report.
+func bulkImportResources(p *providerwrapper.ProviderWrapper, resources []*Resource, report *ImportReport, serviceOf map[*Resource]string) ([]*Resource, error) {
 	targets, addrToResource := assignImportTargets(resources)
 	if len(targets) == 0 {
 		return nil, nil
+	}
+
+	// Resources that never became targets (nil or empty ID) are dropped
+	// silently by assignImportTargets; account for them here.
+	targetSet := make(map[*Resource]bool, len(targets))
+	for _, t := range targets {
+		targetSet[t.resource] = true
+	}
+	for _, r := range resources {
+		if r == nil || r.InstanceInfo == nil || targetSet[r] {
+			continue
+		}
+		report.RecordFailure(failureForResource(r, serviceOf[r], StageRefresh,
+			fmt.Errorf("skipped: resource has an empty ID")))
 	}
 
 	if err := os.WriteFile(filepath.Join(p.WorkDir(), "import.tf"), []byte(renderImportConfig(targets)), 0644); err != nil {
@@ -142,10 +159,12 @@ func bulkImportResources(p *providerwrapper.ProviderWrapper, resources []*Resour
 		// Partial failure: whatever was imported before the error stays in
 		// state, so continue and collect it instead of failing hard.
 		log.Printf("ERROR: bulk import apply failed after retries, continuing with partial state: %v", applyErr)
+		report.RecordFailure(ImportFailure{Stage: StageRefresh,
+			Error: fmt.Sprintf("bulk import apply failed after retries, continued with partial state: %v", applyErr)})
 	}
 
 	refreshed := map[string]bool{}
-	if err := collectShowState(p, addrToResource, refreshed); err != nil {
+	if err := collectShowState(p, addrToResource, refreshed, report, serviceOf); err != nil {
 		return nil, err
 	}
 
@@ -165,10 +184,12 @@ func bulkImportResources(p *providerwrapper.ProviderWrapper, resources []*Resour
 			log.Printf("WARN: resource %s not in state after bulk apply, trying single import", addr)
 			if _, err := p.RunCLI(singleImportTimeout, "import", "-input=false", "-no-color", addr, r.InstanceState.ID); err != nil {
 				log.Printf("ERROR: single import of %s failed: %v", addr, err)
+				report.RecordFailure(failureForResource(r, serviceOf[r], StageRefresh,
+					fmt.Errorf("single import failed: %w", err)))
 				continue
 			}
 		}
-		if err := collectShowState(p, addrToResource, refreshed); err != nil {
+		if err := collectShowState(p, addrToResource, refreshed, report, serviceOf); err != nil {
 			return nil, err
 		}
 	}
@@ -179,6 +200,8 @@ func bulkImportResources(p *providerwrapper.ProviderWrapper, resources []*Resour
 			out = append(out, r)
 		} else {
 			log.Printf("ERROR: Unable to refresh resource %s", r.ResourceName)
+			report.RecordFailure(failureForResource(r, serviceOf[r], StageRefresh,
+				fmt.Errorf("unable to refresh resource: not present in state after import")))
 		}
 	}
 	return out, nil
@@ -206,7 +229,8 @@ type showJSONDoc struct {
 // collectShowState runs `<cli> show -json`, matches state resources back to
 // our import targets by address, and converts each value into the 0.12
 // InstanceState model. Resources already marked in refreshed are skipped.
-func collectShowState(p *providerwrapper.ProviderWrapper, addrToResource map[string]*Resource, refreshed map[string]bool) error {
+// Per-resource conversion failures are recorded in report (nil-safe).
+func collectShowState(p *providerwrapper.ProviderWrapper, addrToResource map[string]*Resource, refreshed map[string]bool, report *ImportReport, serviceOf map[*Resource]string) error {
 	out, err := p.RunCLI(bulkShowTimeout, "show", "-json", "-no-color")
 	if err != nil {
 		return fmt.Errorf("show -json failed: %w", err)
@@ -236,6 +260,7 @@ func collectShowState(p *providerwrapper.ProviderWrapper, addrToResource map[str
 		}
 		if err := assignRefreshedState(p, r, sr.Values, sr.Type); err != nil {
 			log.Printf("WARN: %v", err)
+			report.RecordFailure(failureForResource(r, serviceOf[r], StageRefresh, err))
 			continue
 		}
 		refreshed[sr.Address] = true

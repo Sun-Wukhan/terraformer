@@ -250,7 +250,7 @@ func TestShowStatePipeline(t *testing.T) {
 				InstanceState: &terraform.InstanceState{ID: "vpc-0123456789abcdef0"},
 			}
 			addrToResource := map[string]*Resource{"aws_vpc.tfer__test": r}
-			if err := collectShowState(w, addrToResource, map[string]bool{}); err != nil {
+			if err := collectShowState(w, addrToResource, map[string]bool{}, nil, nil); err != nil {
 				t.Fatalf("collectShowState: %v", err)
 			}
 			if r.InstanceState == nil {
