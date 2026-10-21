@@ -64,13 +64,19 @@ func PrintTfState(resources []Resource) ([]byte, error) {
 	return buf.Bytes(), err
 }
 
-func RefreshResourcesByProvider(providersMapping *ProvidersMapping, providerWrapper *providerwrapper.ProviderWrapper) error {
+func RefreshResourcesByProvider(providersMapping *ProvidersMapping, providerWrapper *providerwrapper.ProviderWrapper, report *ImportReport) error {
 	allResources := providersMapping.ShuffleResources()
+
+	// Attribute each resource to its service for failure reporting.
+	serviceOf := make(map[*Resource]string, len(allResources))
+	for resource, provider := range providersMapping.resourceToProvider {
+		serviceOf[resource] = providersMapping.providerToService[provider]
+	}
 
 	// State refresh is done in bulk via generated `import` blocks + a single
 	// CLI apply + `show -json` (see bulk_import.go), replacing the old
 	// per-resource go-plugin gRPC refresh.
-	refreshedResources, err := bulkImportResources(providerWrapper, allResources)
+	refreshedResources, err := bulkImportResources(providerWrapper, allResources, report, serviceOf)
 	if err != nil {
 		return err
 	}

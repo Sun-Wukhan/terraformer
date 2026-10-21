@@ -146,11 +146,13 @@ func (p *ProvidersMapping) GetResourcesByService() map[string][]Resource {
 	return mapping
 }
 
-func (p *ProvidersMapping) ConvertTFStates(providerWrapper *providerwrapper.ProviderWrapper) {
+func (p *ProvidersMapping) ConvertTFStates(providerWrapper *providerwrapper.ProviderWrapper, report *ImportReport) {
 	for resource := range p.Resources {
 		err := resource.ConvertTFstate(providerWrapper)
 		if err != nil {
 			log.Printf("failed to convert resources %s because of error %s", resource.InstanceInfo.Id, err)
+			report.RecordFailure(failureForResource(resource,
+				p.providerToService[p.resourceToProvider[resource]], StageConvert, err))
 		}
 	}
 
