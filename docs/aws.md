@@ -69,6 +69,46 @@ terraformer import aws --resources=sg --regions=us-east-1
     * `aws_batch_compute_environment`
     * `aws_batch_job_definition`
     * `aws_batch_job_queue`
+*   `bedrock`
+    * `aws_bedrock_custom_model`
+    * `aws_bedrock_enforced_guardrail_configuration`
+    * `aws_bedrock_evaluation_job`
+    * `aws_bedrock_guardrail`
+    * `aws_bedrock_inference_profile`
+    * `aws_bedrock_model_invocation_job`
+    * `aws_bedrock_model_invocation_logging_configuration`
+    * `aws_bedrock_provisioned_model_throughput`
+*   `bedrockagent`
+    * `aws_bedrockagent_agent`
+    * `aws_bedrockagent_agent_action_group`
+    * `aws_bedrockagent_agent_alias`
+    * `aws_bedrockagent_agent_collaborator`
+    * `aws_bedrockagent_agent_knowledge_base_association`
+    * `aws_bedrockagent_data_source`
+    * `aws_bedrockagent_flow`
+    * `aws_bedrockagent_knowledge_base`
+    * `aws_bedrockagent_prompt`
+*   `bedrockagentcore`
+    * `aws_bedrockagentcore_agent_runtime`
+    * `aws_bedrockagentcore_agent_runtime_endpoint`
+    * `aws_bedrockagentcore_api_key_credential_provider`
+    * `aws_bedrockagentcore_browser`
+    * `aws_bedrockagentcore_browser_profile`
+    * `aws_bedrockagentcore_code_interpreter`
+    * `aws_bedrockagentcore_evaluator`
+    * `aws_bedrockagentcore_gateway`
+    * `aws_bedrockagentcore_gateway_rule`
+    * `aws_bedrockagentcore_gateway_target`
+    * `aws_bedrockagentcore_harness`
+    * `aws_bedrockagentcore_memory`
+    * `aws_bedrockagentcore_memory_strategy`
+    * `aws_bedrockagentcore_oauth2_credential_provider`
+    * `aws_bedrockagentcore_online_evaluation_config`
+    * `aws_bedrockagentcore_policy`
+    * `aws_bedrockagentcore_policy_engine`
+    * `aws_bedrockagentcore_registry`
+    * `aws_bedrockagentcore_token_vault_cmk`
+    * `aws_bedrockagentcore_workload_identity`
 *   `budgets`
     * `aws_budgets_budget`
 *   `cloud9`
@@ -236,6 +276,8 @@ terraformer import aws --resources=sg --regions=us-east-1
     * `aws_organizations_organizational_unit`
     * `aws_organizations_policy`
     * `aws_organizations_policy_attachment`
+*   `qbusiness`
+    * `aws_qbusiness_application`
 *   `qldb`
     * `aws_qldb_ledger`
 *   `rds`
@@ -268,6 +310,7 @@ terraformer import aws --resources=sg --regions=us-east-1
     * `aws_route_table_association`
 *   `s3`
     * `aws_s3_bucket`
+    * `aws_s3_directory_bucket`
 *   `secretsmanager`
     * `aws_secretsmanager_secret`
 *   `securityhub`

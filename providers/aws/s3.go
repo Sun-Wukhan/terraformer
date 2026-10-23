@@ -97,7 +97,35 @@ func (g *S3Generator) InitResources() error {
 		return err
 	}
 	g.Resources = g.createResources(config, buckets, g.GetArgs()["region"].(string))
+	g.addDirectoryBuckets(svc)
 	return nil
+}
+
+// addDirectoryBuckets enumerates S3 Express One Zone directory buckets in the
+// selected region. Directory buckets are an optional add-on to the core bucket
+// listing, so a failure here is logged rather than failing the whole S3 import.
+func (g *S3Generator) addDirectoryBuckets(svc *s3.Client) {
+	input := &s3.ListDirectoryBucketsInput{}
+	for {
+		out, err := svc.ListDirectoryBuckets(context.TODO(), input)
+		if err != nil {
+			log.Println("listing S3 directory buckets:", err)
+			return
+		}
+		for _, bucket := range out.Buckets {
+			g.Resources = append(g.Resources, terraformutils.NewSimpleResource(
+				*bucket.Name,
+				*bucket.Name,
+				"aws_s3_directory_bucket",
+				"aws",
+				S3AllowEmptyValues,
+			))
+		}
+		if out.ContinuationToken == nil {
+			return
+		}
+		input.ContinuationToken = out.ContinuationToken
+	}
 }
 
 // PostGenerateHook for add bucket policy json as heredoc
