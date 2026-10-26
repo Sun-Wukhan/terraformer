@@ -464,7 +464,10 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/bedrockagent v1.69.1
 	github.com/aws/aws-sdk-go-v2/service/bedrockagentcorecontrol v1.75.0
 	github.com/aws/aws-sdk-go-v2/service/directconnect v1.30.1
+	github.com/aws/aws-sdk-go-v2/service/lightsail v1.67.1
 	github.com/aws/aws-sdk-go-v2/service/qbusiness v1.42.6
+	github.com/aws/aws-sdk-go-v2/service/quicksight v1.138.1
+	github.com/aws/aws-sdk-go-v2/service/sagemaker v1.284.2
 	github.com/gofrs/uuid/v3 v3.1.2
 	github.com/ionos-cloud/sdk-go-cert-manager v1.0.0
 	github.com/ionos-cloud/sdk-go-container-registry v1.0.0
