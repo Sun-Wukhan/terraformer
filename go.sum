@@ -587,6 +587,8 @@ github.com/aws/aws-sdk-go-v2/service/kms v1.27.5 h1:7lKTr8zJ2nVaVgyII+7hUayTi7xW
 github.com/aws/aws-sdk-go-v2/service/kms v1.27.5/go.mod h1:D9FVDkZjkZnnFHymJ3fPVz0zOUlNSd0xcIIVmmrAac8=
 github.com/aws/aws-sdk-go-v2/service/lambda v1.49.5 h1:ZHVbzOnoj5nXxUug8iWzqg2Tmp6Jc4CE5tPfoE96qrs=
 github.com/aws/aws-sdk-go-v2/service/lambda v1.49.5/go.mod h1:0V5z1X/8NA9eQ5cZSz5ZaHU8xA/hId2ZAlsHeO7Jrdk=
+github.com/aws/aws-sdk-go-v2/service/lightsail v1.67.1 h1:w1jXllVS+1cUth+3DHsWUbpr/5GRSCU8Gp7P2R5vsrM=
+github.com/aws/aws-sdk-go-v2/service/lightsail v1.67.1/go.mod h1:fbzUREgID6s3xUXUlrskfsJ8VtFNq/ehvf3Ro3Xo6kA=
 github.com/aws/aws-sdk-go-v2/service/medialive v1.43.3 h1:/Ub7sD+eD7K6FWQeuALyVApqyec5Ngk893X3VrVPN6c=
 github.com/aws/aws-sdk-go-v2/service/medialive v1.43.3/go.mod h1:fH6Wz0q9JXupxmSgCFPwxymnpiX6PitFx2f/AqjuayM=
 github.com/aws/aws-sdk-go-v2/service/mediapackage v1.28.5 h1:z+b1lClMC3rSxlUQqRbpGh/uMmUHWC96uQ+AzzZpens=
@@ -603,6 +605,8 @@ github.com/aws/aws-sdk-go-v2/service/qbusiness v1.42.6 h1:xHeadZciyl3EYcKCVqb+wu
 github.com/aws/aws-sdk-go-v2/service/qbusiness v1.42.6/go.mod h1:W7ciCQzUb+QYkzmfH5rvJsnksgmxVPJAy8xWUBGZSKA=
 github.com/aws/aws-sdk-go-v2/service/qldb v1.19.5 h1:dzxL7EqY37jp4AGBbMXyZT+koN8WMCEO0XCPuLp17pw=
 github.com/aws/aws-sdk-go-v2/service/qldb v1.19.5/go.mod h1:tN5rVxOznGnV6y5gXixoL83vMOAuPTFAnqafo813M8A=
+github.com/aws/aws-sdk-go-v2/service/quicksight v1.138.1 h1:iBb43C8IpG+lBF7JXXQBdMYGwH2st1sIY3c/QIqE+vs=
+github.com/aws/aws-sdk-go-v2/service/quicksight v1.138.1/go.mod h1:u/yxzYpLVsH1l4OUowPm2fTI1uxlmfOYWNJ9WPAWeQo=
 github.com/aws/aws-sdk-go-v2/service/rds v1.64.5 h1:HzkVXbafwf/N+uwNzuXaOpXwG2z8mi7nYFRKHeH/hFQ=
 github.com/aws/aws-sdk-go-v2/service/rds v1.64.5/go.mod h1:MYzRMSdY70kcS8AFg0aHmk/xj6VAe0UfaCCoLrBWPow=
 github.com/aws/aws-sdk-go-v2/service/redshift v1.39.6 h1:3F+My2KgZqnc6CPks4bkVoogqFyf1nP0iF4mAQ96XWc=
@@ -613,6 +617,8 @@ github.com/aws/aws-sdk-go-v2/service/route53 v1.35.5 h1:WVQIKVwv56JY+I0b2fFeRGCT
 github.com/aws/aws-sdk-go-v2/service/route53 v1.35.5/go.mod h1:F9El48+5Tf+TkYJB/6M9H7oqXw9Mr9eVetwJ6SUql7g=
 github.com/aws/aws-sdk-go-v2/service/s3 v1.47.5 h1:Keso8lIOS+IzI2MkPZyK6G0LYcK3My2LQ+T5bxghEAY=
 github.com/aws/aws-sdk-go-v2/service/s3 v1.47.5/go.mod h1:vADO6Jn+Rq4nDtfwNjhgR84qkZwiC6FqCaXdw/kYwjA=
+github.com/aws/aws-sdk-go-v2/service/sagemaker v1.284.2 h1:x2Q56fxrHV3eDciLqMMFHvWoYzV/HGVKfEIxTmBXNQc=
+github.com/aws/aws-sdk-go-v2/service/sagemaker v1.284.2/go.mod h1:DVZ8QRMUfV85MqG3JhhG01GnMIq5eEfngiIPIQMUkMY=
 github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.25.5 h1:qYi/BfDrWXZxlmRjlKCyFmtI4HKJwW8OKDKhKRAOZQI=
 github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.25.5/go.mod h1:4Ae1NCLK6ghmjzd45Tc33GgCKhUWD2ORAlULtMO1Cbs=
 github.com/aws/aws-sdk-go-v2/service/securityhub v1.43.5 h1:lXjoZFvSuEvRGytYmGqVeADzlCJMSyC3DIuz2IkJC4Q=
