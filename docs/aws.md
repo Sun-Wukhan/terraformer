@@ -242,6 +242,30 @@ terraformer import aws --resources=sg --regions=us-east-1
     * `aws_lambda_function_event_invoke_config`
     * `aws_lambda_layer_version`
     * `aws_lambda_permission`
+*   `lightsail`
+    * `aws_lightsail_bucket`
+    * `aws_lightsail_bucket_access_key`
+    * `aws_lightsail_bucket_resource_access`
+    * `aws_lightsail_certificate`
+    * `aws_lightsail_container_service`
+    * `aws_lightsail_container_service_deployment_version`
+    * `aws_lightsail_database`
+    * `aws_lightsail_disk`
+    * `aws_lightsail_disk_attachment`
+    * `aws_lightsail_distribution`
+    * `aws_lightsail_domain`
+    * `aws_lightsail_domain_entry`
+    * `aws_lightsail_instance`
+    * `aws_lightsail_instance_public_ports`
+    * `aws_lightsail_key_pair`
+    * `aws_lightsail_lb`
+    * `aws_lightsail_lb_attachment`
+    * `aws_lightsail_lb_certificate`
+    * `aws_lightsail_lb_certificate_attachment`
+    * `aws_lightsail_lb_https_redirection_policy`
+    * `aws_lightsail_lb_stickiness_policy`
+    * `aws_lightsail_static_ip`
+    * `aws_lightsail_static_ip_attachment`
 *   `logs`
     * `aws_cloudwatch_log_group`
 *   `media_package`
@@ -280,6 +304,32 @@ terraformer import aws --resources=sg --regions=us-east-1
     * `aws_qbusiness_application`
 *   `qldb`
     * `aws_qldb_ledger`
+*   `quicksight`
+    * `aws_quicksight_account_settings`
+    * `aws_quicksight_account_subscription`
+    * `aws_quicksight_analysis`
+    * `aws_quicksight_custom_permissions`
+    * `aws_quicksight_dashboard`
+    * `aws_quicksight_data_set`
+    * `aws_quicksight_data_source`
+    * `aws_quicksight_folder`
+    * `aws_quicksight_folder_membership`
+    * `aws_quicksight_group`
+    * `aws_quicksight_group_membership`
+    * `aws_quicksight_iam_policy_assignment`
+    * `aws_quicksight_ingestion`
+    * `aws_quicksight_ip_restriction`
+    * `aws_quicksight_key_registration`
+    * `aws_quicksight_namespace`
+    * `aws_quicksight_refresh_schedule`
+    * `aws_quicksight_role_custom_permission`
+    * `aws_quicksight_role_membership`
+    * `aws_quicksight_template`
+    * `aws_quicksight_template_alias`
+    * `aws_quicksight_theme`
+    * `aws_quicksight_user`
+    * `aws_quicksight_user_custom_permission`
+    * `aws_quicksight_vpc_connection`
 *   `rds`
     * `aws_db_instance`
     * `aws_db_proxy`
@@ -311,6 +361,46 @@ terraformer import aws --resources=sg --regions=us-east-1
 *   `s3`
     * `aws_s3_bucket`
     * `aws_s3_directory_bucket`
+*   `sagemaker`
+    * `aws_sagemaker_algorithm`
+    * `aws_sagemaker_app`
+    * `aws_sagemaker_app_image_config`
+    * `aws_sagemaker_code_repository`
+    * `aws_sagemaker_data_quality_job_definition`
+    * `aws_sagemaker_device`
+    * `aws_sagemaker_device_fleet`
+    * `aws_sagemaker_domain`
+    * `aws_sagemaker_endpoint`
+    * `aws_sagemaker_endpoint_configuration`
+    * `aws_sagemaker_feature_group`
+    * `aws_sagemaker_flow_definition`
+    * `aws_sagemaker_hub`
+    * `aws_sagemaker_hub_content_reference`
+    * `aws_sagemaker_human_task_ui`
+    * `aws_sagemaker_hyper_parameter_tuning_job`
+    * `aws_sagemaker_image`
+    * `aws_sagemaker_image_version`
+    * `aws_sagemaker_inference_component`
+    * `aws_sagemaker_labeling_job`
+    * `aws_sagemaker_mlflow_app`
+    * `aws_sagemaker_mlflow_tracking_server`
+    * `aws_sagemaker_model`
+    * `aws_sagemaker_model_card`
+    * `aws_sagemaker_model_card_export_job`
+    * `aws_sagemaker_model_package_group`
+    * `aws_sagemaker_model_package_group_policy`
+    * `aws_sagemaker_monitoring_schedule`
+    * `aws_sagemaker_notebook_instance`
+    * `aws_sagemaker_notebook_instance_lifecycle_configuration`
+    * `aws_sagemaker_pipeline`
+    * `aws_sagemaker_project`
+    * `aws_sagemaker_servicecatalog_portfolio_status`
+    * `aws_sagemaker_space`
+    * `aws_sagemaker_studio_lifecycle_config`
+    * `aws_sagemaker_training_job`
+    * `aws_sagemaker_user_profile`
+    * `aws_sagemaker_workforce`
+    * `aws_sagemaker_workteam`
 *   `secretsmanager`
     * `aws_secretsmanager_secret`
 *   `securityhub`
