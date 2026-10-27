@@ -20,7 +20,12 @@ import (
 	"strings"
 
 	"github.com/GoogleCloudPlatform/terraformer/terraformutils"
+	analyticshubv1 "google.golang.org/api/analyticshub/v1"
 	"google.golang.org/api/bigquery/v2"
+	bigqueryconnectionv1 "google.golang.org/api/bigqueryconnection/v1"
+	bigquerydatapolicyv1 "google.golang.org/api/bigquerydatapolicy/v1"
+	bigquerydatatransferv1 "google.golang.org/api/bigquerydatatransfer/v1"
+	bigqueryreservationv1 "google.golang.org/api/bigqueryreservation/v1"
 )
 
 var bigQueryAllowEmptyValues = []string{""}
@@ -102,6 +107,42 @@ func (g *BigQueryGenerator) InitResources() error {
 	datasetsList := bigQueryService.Datasets.List(g.GetArgs()["project"].(string))
 
 	g.Resources = g.createDatasets(ctx, datasetsList, bigQueryService)
+
+	// Depth collections (bigquery_depth.go): dataset/table/routine IAM,
+	// routines, row access policies, reservations, connections, data
+	// transfer, Analytics Hub and data policies. A satellite client
+	// that fails to construct only disables its own section.
+	reservationService, err := bigqueryreservationv1.NewService(ctx)
+	if err != nil {
+		log.Println(err)
+		reservationService = nil
+	}
+	connectionService, err := bigqueryconnectionv1.NewService(ctx)
+	if err != nil {
+		log.Println(err)
+		connectionService = nil
+	}
+	transferService, err := bigquerydatatransferv1.NewService(ctx)
+	if err != nil {
+		log.Println(err)
+		transferService = nil
+	}
+	hubService, err := analyticshubv1.NewService(ctx)
+	if err != nil {
+		log.Println(err)
+		hubService = nil
+	}
+	datapolicyService, err := bigquerydatapolicyv1.NewService(ctx)
+	if err != nil {
+		log.Println(err)
+		datapolicyService = nil
+	}
+	restClient, err := newAuthenticatedHTTPClient(ctx)
+	if err != nil {
+		log.Println(err)
+		restClient = nil
+	}
+	g.initDepthResources(ctx, bigQueryService, reservationService, connectionService, transferService, hubService, datapolicyService, restClient)
 	return nil
 }
 
