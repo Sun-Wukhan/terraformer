@@ -23,6 +23,40 @@ List of supported GCP services:
 
 *   `addresses`
     * `google_compute_address`
+*   `apigee`
+    * `google_apigee_addons_config`
+    * `google_apigee_api`
+    * `google_apigee_api_deployment`
+    * `google_apigee_api_product`
+    * `google_apigee_app_group`
+    * `google_apigee_control_plane_access`
+    * `google_apigee_data_collector`
+    * `google_apigee_datastore`
+    * `google_apigee_developer`
+    * `google_apigee_developer_app`
+    * `google_apigee_dns_zone`
+    * `google_apigee_endpoint_attachment`
+    * `google_apigee_envgroup`
+    * `google_apigee_envgroup_attachment`
+    * `google_apigee_environment`
+    * `google_apigee_environment_addons_config`
+    * `google_apigee_environment_api_revision_deployment`
+    * `google_apigee_environment_debugmask`
+    * `google_apigee_environment_iam_binding`
+    * `google_apigee_environment_iam_member`
+    * `google_apigee_environment_iam_policy`
+    * `google_apigee_flowhook`
+    * `google_apigee_instance`
+    * `google_apigee_instance_attachment`
+    * `google_apigee_nat_address`
+    * `google_apigee_organization`
+    * `google_apigee_security_action`
+    * `google_apigee_security_monitoring_condition`
+    * `google_apigee_security_profile_v2`
+    * `google_apigee_sharedflow`
+    * `google_apigee_sharedflow_deployment`
+    * `google_apigee_space`
+    * `google_apigee_sync_authorization`
 *   `autoscalers`
     * `google_compute_autoscaler`
 *   `backendBuckets`
@@ -140,6 +174,58 @@ List of supported GCP services:
     * `google_monitoring_group`
     * `google_monitoring_notification_channel`
     * `google_monitoring_uptime_check_config`
+*   `networkConnectivity`
+    * `google_network_connectivity_group`
+    * `google_network_connectivity_hub`
+    * `google_network_connectivity_hub_iam_binding`
+    * `google_network_connectivity_hub_iam_member`
+    * `google_network_connectivity_hub_iam_policy`
+    * `google_network_connectivity_internal_range`
+    * `google_network_connectivity_policy_based_route`
+    * `google_network_connectivity_regional_endpoint`
+    * `google_network_connectivity_service_connection_policy`
+    * `google_network_connectivity_spoke`
+*   `networkSecurity`
+    * `google_network_security_address_group`
+    * `google_network_security_address_group_iam_binding`
+    * `google_network_security_address_group_iam_member`
+    * `google_network_security_address_group_iam_policy`
+    * `google_network_security_authorization_policy`
+    * `google_network_security_authz_policy`
+    * `google_network_security_backend_authentication_config`
+    * `google_network_security_client_tls_policy`
+    * `google_network_security_firewall_endpoint`
+    * `google_network_security_firewall_endpoint_association`
+    * `google_network_security_gateway_security_policy`
+    * `google_network_security_gateway_security_policy_rule`
+    * `google_network_security_intercept_deployment`
+    * `google_network_security_intercept_deployment_group`
+    * `google_network_security_intercept_endpoint_group`
+    * `google_network_security_intercept_endpoint_group_association`
+    * `google_network_security_mirroring_deployment`
+    * `google_network_security_mirroring_deployment_group`
+    * `google_network_security_mirroring_endpoint_group`
+    * `google_network_security_mirroring_endpoint_group_association`
+    * `google_network_security_security_profile`
+    * `google_network_security_security_profile_group`
+    * `google_network_security_server_tls_policy`
+    * `google_network_security_tls_inspection_policy`
+    * `google_network_security_url_lists`
+*   `networkServices`
+    * `google_network_services_authz_extension`
+    * `google_network_services_endpoint_policy`
+    * `google_network_services_gateway`
+    * `google_network_services_grpc_route`
+    * `google_network_services_http_route`
+    * `google_network_services_lb_edge_extension`
+    * `google_network_services_lb_route_extension`
+    * `google_network_services_lb_traffic_extension`
+    * `google_network_services_mesh`
+    * `google_network_services_service_binding`
+    * `google_network_services_service_lb_policies`
+    * `google_network_services_tcp_route`
+    * `google_network_services_tls_route`
+    * `google_network_services_wasm_plugin`
 *   `networks`
     * `google_compute_network`
 *   `nodeGroups`
