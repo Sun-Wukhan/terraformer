@@ -130,6 +130,9 @@ func (p *GCPProvider) GetSupportedService() map[string]terraformutils.ServiceGen
 	services["networkServices"] = &GCPFacade{service: &NetworkServicesGenerator{}}
 	services["networkConnectivity"] = &GCPFacade{service: &NetworkConnectivityGenerator{}}
 	services["cloudRun"] = &GCPFacade{service: &CloudRunGenerator{}}
+	services["scc"] = &GCPFacade{service: &SccGenerator{}}
+	services["dataplex"] = &GCPFacade{service: &DataplexGenerator{}}
+	services["chronicle"] = &GCPFacade{service: &ChronicleGenerator{}}
 	services["routerSubresources"] = &GCPFacade{service: &RouterSubresourcesGenerator{}}
 	return services
 }

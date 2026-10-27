@@ -64,8 +64,44 @@ List of supported GCP services:
 *   `backendServices`
     * `google_compute_backend_service`
 *   `bigQuery`
+    * `google_bigquery_analytics_hub_data_exchange`
+    * `google_bigquery_analytics_hub_data_exchange_iam_binding`
+    * `google_bigquery_analytics_hub_data_exchange_iam_member`
+    * `google_bigquery_analytics_hub_data_exchange_iam_policy`
+    * `google_bigquery_analytics_hub_data_exchange_subscription`
+    * `google_bigquery_analytics_hub_listing`
+    * `google_bigquery_analytics_hub_listing_iam_binding`
+    * `google_bigquery_analytics_hub_listing_iam_member`
+    * `google_bigquery_analytics_hub_listing_iam_policy`
+    * `google_bigquery_analytics_hub_query_template`
+    * `google_bigquery_bi_reservation`
+    * `google_bigquery_capacity_commitment`
+    * `google_bigquery_connection`
+    * `google_bigquery_connection_iam_binding`
+    * `google_bigquery_connection_iam_member`
+    * `google_bigquery_connection_iam_policy`
+    * `google_bigquery_data_transfer_config`
+    * `google_bigquery_data_transfer_data_source_enrollment`
+    * `google_bigquery_datapolicy_data_policy`
+    * `google_bigquery_datapolicy_data_policy_iam_binding`
+    * `google_bigquery_datapolicy_data_policy_iam_member`
+    * `google_bigquery_datapolicy_data_policy_iam_policy`
     * `google_bigquery_dataset`
+    * `google_bigquery_dataset_iam_binding`
+    * `google_bigquery_dataset_iam_member`
+    * `google_bigquery_dataset_iam_policy`
+    * `google_bigquery_reservation`
+    * `google_bigquery_reservation_assignment`
+    * `google_bigquery_reservation_group`
+    * `google_bigquery_routine`
+    * `google_bigquery_routine_iam_binding`
+    * `google_bigquery_routine_iam_member`
+    * `google_bigquery_routine_iam_policy`
+    * `google_bigquery_row_access_policy`
     * `google_bigquery_table`
+    * `google_bigquery_table_iam_binding`
+    * `google_bigquery_table_iam_member`
+    * `google_bigquery_table_iam_policy`
 *   `cloudFunctions`
     * `google_cloudfunctions_function`
     * `google_cloudfunctions2_function`
@@ -89,6 +125,54 @@ List of supported GCP services:
 *   `cloudsql`
     * `google_sql_database`
     * `google_sql_database_instance`
+*   `chronicle`
+    * (no resources — Google SecOps resources hang off a provisioned Chronicle instance, and the Chronicle API exposes no instance list (GetInstance only), so the family cannot be enumerated; see `providers/gcp/chronicle.go`)
+*   `dataplex`
+    * `google_dataplex_aspect_type`
+    * `google_dataplex_aspect_type_iam_binding`
+    * `google_dataplex_aspect_type_iam_member`
+    * `google_dataplex_aspect_type_iam_policy`
+    * `google_dataplex_asset`
+    * `google_dataplex_asset_iam_binding`
+    * `google_dataplex_asset_iam_member`
+    * `google_dataplex_asset_iam_policy`
+    * `google_dataplex_data_product`
+    * `google_dataplex_data_product_data_asset`
+    * `google_dataplex_data_product_iam_binding`
+    * `google_dataplex_data_product_iam_member`
+    * `google_dataplex_data_product_iam_policy`
+    * `google_dataplex_datascan`
+    * `google_dataplex_datascan_iam_binding`
+    * `google_dataplex_datascan_iam_member`
+    * `google_dataplex_datascan_iam_policy`
+    * `google_dataplex_entry`
+    * `google_dataplex_entry_group`
+    * `google_dataplex_entry_group_iam_binding`
+    * `google_dataplex_entry_group_iam_member`
+    * `google_dataplex_entry_group_iam_policy`
+    * `google_dataplex_entry_type`
+    * `google_dataplex_entry_type_iam_binding`
+    * `google_dataplex_entry_type_iam_member`
+    * `google_dataplex_entry_type_iam_policy`
+    * `google_dataplex_glossary`
+    * `google_dataplex_glossary_category`
+    * `google_dataplex_glossary_iam_binding`
+    * `google_dataplex_glossary_iam_member`
+    * `google_dataplex_glossary_iam_policy`
+    * `google_dataplex_glossary_term`
+    * `google_dataplex_lake`
+    * `google_dataplex_lake_iam_binding`
+    * `google_dataplex_lake_iam_member`
+    * `google_dataplex_lake_iam_policy`
+    * `google_dataplex_metadata_feed`
+    * `google_dataplex_task`
+    * `google_dataplex_task_iam_binding`
+    * `google_dataplex_task_iam_member`
+    * `google_dataplex_task_iam_policy`
+    * `google_dataplex_zone`
+    * `google_dataplex_zone_iam_binding`
+    * `google_dataplex_zone_iam_member`
+    * `google_dataplex_zone_iam_policy`
 *   `dataProc`
     * `google_dataproc_cluster`
 *   `disks`
@@ -273,6 +357,39 @@ List of supported GCP services:
     * `google_compute_route`
 *   `schedulerJobs`
     * `google_cloud_scheduler_job`
+*   `scc`
+    * `google_scc_event_threat_detection_custom_module`
+    * `google_scc_folder_custom_module`
+    * `google_scc_folder_notification_config`
+    * `google_scc_folder_scc_big_query_export`
+    * `google_scc_management_folder_security_health_analytics_custom_module`
+    * `google_scc_management_organization_event_threat_detection_custom_module`
+    * `google_scc_management_organization_security_health_analytics_custom_module`
+    * `google_scc_management_project_security_health_analytics_custom_module`
+    * `google_scc_mute_config`
+    * `google_scc_notification_config`
+    * `google_scc_organization_custom_module`
+    * `google_scc_organization_scc_big_query_export`
+    * `google_scc_project_custom_module`
+    * `google_scc_project_notification_config`
+    * `google_scc_project_scc_big_query_export`
+    * `google_scc_source`
+    * `google_scc_source_iam_binding`
+    * `google_scc_source_iam_member`
+    * `google_scc_source_iam_policy`
+    * `google_scc_v2_folder_mute_config`
+    * `google_scc_v2_folder_notification_config`
+    * `google_scc_v2_folder_scc_big_query_export`
+    * `google_scc_v2_organization_mute_config`
+    * `google_scc_v2_organization_notification_config`
+    * `google_scc_v2_organization_scc_big_query_export`
+    * `google_scc_v2_organization_source`
+    * `google_scc_v2_organization_source_iam_binding`
+    * `google_scc_v2_organization_source_iam_member`
+    * `google_scc_v2_organization_source_iam_policy`
+    * `google_scc_v2_project_mute_config`
+    * `google_scc_v2_project_notification_config`
+    * `google_scc_v2_project_scc_big_query_export`
 *   `securityPolicies`
     * `google_compute_security_policy`
 *   `snapshots`
