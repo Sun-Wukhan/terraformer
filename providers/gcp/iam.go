@@ -21,6 +21,7 @@ import (
 
 	admin "cloud.google.com/go/iam/admin/apiv1"
 	"google.golang.org/api/cloudresourcemanager/v1"
+	iamv1 "google.golang.org/api/iam/v1"
 	"google.golang.org/api/iterator"
 	adminpb "google.golang.org/genproto/googleapis/iam/admin/v1"
 
@@ -138,5 +139,13 @@ func (g *IamGenerator) InitResources() error {
 	g.Resources = g.createServiceAccountResources(serviceAccountsIterator)
 	g.Resources = append(g.Resources, g.createIamCustomRoleResources(rolesResponse, projectID)...)
 	g.Resources = append(g.Resources, g.createIamMemberResources(policyResponse, projectID)...)
+
+	iamService, err := iamv1.NewService(ctx)
+	if err != nil {
+		return err
+	}
+	if err := g.initWorkloadIdentityResources(ctx, iamService); err != nil {
+		return err
+	}
 	return nil
 }

@@ -50,9 +50,9 @@ var terraformResources = map[string]gcpResourceRenderable{
 			terraformName: "google_compute_global_forwarding_rule",
 		},
 	},
-	// "globalNetworkEndpointGroups": basicGCPResource{
-	// 	terraformName: "google_compute_global_network_endpoint",
-	// },
+	"globalNetworkEndpointGroups": basicGCPResource{
+		terraformName: "google_compute_global_network_endpoint_group",
+	},
 	"healthChecks": basicGCPResource{
 		terraformName: "google_compute_health_check",
 	},
@@ -64,6 +64,9 @@ var terraformResources = map[string]gcpResourceRenderable{
 	},
 	"images": basicGCPResource{
 		terraformName: "google_compute_image",
+	},
+	"machineImages": basicGCPResource{
+		terraformName: "google_compute_machine_image",
 	},
 	"instanceGroupManagers": instanceGroupManagers{
 		basicGCPResource{
@@ -138,14 +141,9 @@ var terraformResources = map[string]gcpResourceRenderable{
 	"securityPolicies": basicGCPResource{
 		terraformName: "google_compute_security_policy",
 	},
-	/*"snapshots": {
+	"snapshots": basicGCPResource{
 		terraformName: "google_compute_snapshot",
-		ignoreKeys: []string{
-			"snapshot_encryption_key_sha256",
-			"source_disk_encryption_key_sha256",
-			"source_disk_link",
-		},
-	},*/
+	},
 	"sslCertificates": basicGCPResource{
 		terraformName: "google_compute_managed_ssl_certificate",
 	},

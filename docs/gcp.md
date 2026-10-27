@@ -37,6 +37,21 @@ List of supported GCP services:
     * `google_cloudfunctions2_function`
 *   `cloudbuild`
     * `google_cloudbuild_trigger`
+*   `cloudRun`
+    * `google_cloud_run_domain_mapping`
+    * `google_cloud_run_service`
+    * `google_cloud_run_service_iam_binding`
+    * `google_cloud_run_service_iam_member`
+    * `google_cloud_run_service_iam_policy`
+    * `google_cloud_run_v2_job`
+    * `google_cloud_run_v2_job_iam_binding`
+    * `google_cloud_run_v2_job_iam_member`
+    * `google_cloud_run_v2_job_iam_policy`
+    * `google_cloud_run_v2_service`
+    * `google_cloud_run_v2_service_iam_binding`
+    * `google_cloud_run_v2_service_iam_member`
+    * `google_cloud_run_v2_service_iam_policy`
+    * `google_cloud_run_v2_worker_pool`
 *   `cloudsql`
     * `google_sql_database`
     * `google_sql_database_instance`
@@ -68,6 +83,8 @@ List of supported GCP services:
     * `google_compute_global_address`
 *   `globalForwardingRules`
     * `google_compute_global_forwarding_rule`
+*   `globalNetworkEndpointGroups`
+    * `google_compute_global_network_endpoint_group`
 *   `healthChecks`
     * `google_compute_health_check`
 *   `httpHealthChecks`
@@ -75,6 +92,15 @@ List of supported GCP services:
 *   `httpsHealthChecks`
     * `google_compute_https_health_check`
 *   `iam`
+    * `google_iam_oauth_client`
+    * `google_iam_oauth_client_credential`
+    * `google_iam_workload_identity_pool`
+    * `google_iam_workload_identity_pool_iam_binding`
+    * `google_iam_workload_identity_pool_iam_member`
+    * `google_iam_workload_identity_pool_iam_policy`
+    * `google_iam_workload_identity_pool_managed_identity`
+    * `google_iam_workload_identity_pool_namespace`
+    * `google_iam_workload_identity_pool_provider`
     * `google_project_iam_custom_role`
     * `google_project_iam_member`
     * `google_service_account`
@@ -93,8 +119,20 @@ List of supported GCP services:
 *   `kms`
     * `google_kms_crypto_key`
     * `google_kms_key_ring`
+*   `machineImages`
+    * `google_compute_machine_image`
 *   `logging`
+    * `google_logging_linked_dataset`
+    * `google_logging_log_scope`
+    * `google_logging_log_view`
+    * `google_logging_log_view_iam_binding`
+    * `google_logging_log_view_iam_member`
+    * `google_logging_log_view_iam_policy`
     * `google_logging_metric`
+    * `google_logging_project_bucket_config`
+    * `google_logging_project_exclusion`
+    * `google_logging_project_sink`
+    * `google_logging_saved_query`
 *   `memoryStore`
     * `google_redis_instance`
 *   `monitoring`
@@ -141,12 +179,18 @@ List of supported GCP services:
     * `google_compute_resource_policy`
 *   `routers`
     * `google_compute_router`
+*   `routerSubresources`
+    * `google_compute_router_interface`
+    * `google_compute_router_nat`
+    * `google_compute_router_peer`
 *   `routes`
     * `google_compute_route`
 *   `schedulerJobs`
     * `google_cloud_scheduler_job`
 *   `securityPolicies`
     * `google_compute_security_policy`
+*   `snapshots`
+    * `google_compute_snapshot`
 *   `sslCertificates`
     * `google_compute_managed_ssl_certificate`
 *   `sslPolicies`
@@ -169,6 +213,46 @@ List of supported GCP services:
     * `google_compute_vpn_gateway`
 *   `urlMaps`
     * `google_compute_url_map`
+*   `vertexAi`
+    * `google_vertex_ai_cache_config`
+    * `google_vertex_ai_custom_job`
+    * `google_vertex_ai_dataset`
+    * `google_vertex_ai_deployment_resource_pool`
+    * `google_vertex_ai_endpoint`
+    * `google_vertex_ai_feature_group`
+    * `google_vertex_ai_feature_group_feature`
+    * `google_vertex_ai_feature_group_iam_binding`
+    * `google_vertex_ai_feature_group_iam_member`
+    * `google_vertex_ai_feature_group_iam_policy`
+    * `google_vertex_ai_feature_online_store`
+    * `google_vertex_ai_feature_online_store_featureview`
+    * `google_vertex_ai_feature_online_store_featureview_iam_binding`
+    * `google_vertex_ai_feature_online_store_featureview_iam_member`
+    * `google_vertex_ai_feature_online_store_featureview_iam_policy`
+    * `google_vertex_ai_feature_online_store_iam_binding`
+    * `google_vertex_ai_feature_online_store_iam_member`
+    * `google_vertex_ai_feature_online_store_iam_policy`
+    * `google_vertex_ai_featurestore`
+    * `google_vertex_ai_featurestore_entitytype`
+    * `google_vertex_ai_featurestore_entitytype_feature`
+    * `google_vertex_ai_featurestore_entitytype_iam_binding`
+    * `google_vertex_ai_featurestore_entitytype_iam_member`
+    * `google_vertex_ai_featurestore_entitytype_iam_policy`
+    * `google_vertex_ai_featurestore_iam_binding`
+    * `google_vertex_ai_featurestore_iam_member`
+    * `google_vertex_ai_featurestore_iam_policy`
+    * `google_vertex_ai_index`
+    * `google_vertex_ai_index_endpoint`
+    * `google_vertex_ai_index_endpoint_deployed_index`
+    * `google_vertex_ai_metadata_store`
+    * `google_vertex_ai_persistent_resource`
+    * `google_vertex_ai_pipeline_job`
+    * `google_vertex_ai_rag_corpus`
+    * `google_vertex_ai_rag_file`
+    * `google_vertex_ai_reasoning_engine`
+    * `google_vertex_ai_tensorboard`
+    * `google_vertex_ai_tensorboard_experiment`
+    * `google_vertex_ai_tensorboard_run`
 *   `vpnTunnels`
     * `google_compute_vpn_tunnel`
 
