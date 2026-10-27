@@ -22,7 +22,9 @@ import (
 
 	"github.com/GoogleCloudPlatform/terraformer/terraformutils"
 
+	cloudresourcemanagerv1 "google.golang.org/api/cloudresourcemanager/v1"
 	"google.golang.org/api/storage/v1"
+	storagebatchoperationsv1 "google.golang.org/api/storagebatchoperations/v1"
 )
 
 var GcsAllowEmptyValues = []string{"labels.", "created_before"}
@@ -189,6 +191,28 @@ func (g *GcsGenerator) InitResources() error {
 		return err
 	}
 	g.Resources = g.createBucketsResources(ctx, gcsService)
+
+	// Depth collections (storage_depth.go): per-bucket ACLs, folders,
+	// managed folders, objects and anywhere caches, HMAC keys, batch
+	// operations jobs, Storage Control configs and FTP servers. A
+	// satellite client that fails to construct only disables its own
+	// section.
+	batchService, err := storagebatchoperationsv1.NewService(ctx)
+	if err != nil {
+		log.Println(err)
+		batchService = nil
+	}
+	crmService, err := cloudresourcemanagerv1.NewService(ctx)
+	if err != nil {
+		log.Println(err)
+		crmService = nil
+	}
+	restClient, err := newAuthenticatedHTTPClient(ctx)
+	if err != nil {
+		log.Println(err)
+		restClient = nil
+	}
+	g.initStorageDepthResources(ctx, gcsService, batchService, crmService, restClient)
 
 	// TODO find bug with storageTransferService.TransferJobs.List().Pages
 	// storageTransferService, err := storagetransfer.NewService(ctx)

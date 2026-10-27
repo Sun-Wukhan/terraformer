@@ -21,6 +21,13 @@ terraformer import google --resources=gcs,forwardingRules,httpHealthChecks --reg
 
 List of supported GCP services:
 
+*   `accessContextManager`
+    * `google_access_context_manager_access_level`
+    * `google_access_context_manager_access_policy`
+    * `google_access_context_manager_access_policy_iam`
+    * `google_access_context_manager_authorized_orgs_desc`
+    * `google_access_context_manager_gcp_user_access_binding`
+    * `google_access_context_manager_service_perimeter`
 *   `addresses`
     * `google_compute_address`
 *   `apigee`
@@ -177,23 +184,112 @@ List of supported GCP services:
     * `google_dataproc_cluster`
 *   `disks`
     * `google_compute_disk`
+*   `discoveryEngine`
+    * `google_discovery_engine_acl_config`
+    * `google_discovery_engine_assistant`
+    * `google_discovery_engine_chat_engine`
+    * `google_discovery_engine_cmek_config`
+    * `google_discovery_engine_control`
+    * `google_discovery_engine_data_connector`
+    * `google_discovery_engine_data_store`
+    * `google_discovery_engine_license_config`
+    * `google_discovery_engine_recommendation_engine`
+    * `google_discovery_engine_schema`
+    * `google_discovery_engine_search_engine`
+    * `google_discovery_engine_search_engine_iam`
+    * `google_discovery_engine_serving_config`
+    * `google_discovery_engine_sitemap`
+    * `google_discovery_engine_target_site`
+    * `google_discovery_engine_user_store`
+    * `google_discovery_engine_widget_config`
 *   `dns`
     * `google_dns_managed_zone`
     * `google_dns_record_set`
 *   `externalVpnGateways`
     * `google_compute_external_vpn_gateway`
+*   `firebase`
+    * `google_firebase_ai_logic_config`
+    * `google_firebase_ai_logic_prompt_template`
+    * `google_firebase_ai_logic_prompt_template_lock`
+    * `google_firebase_android_app`
+    * `google_firebase_app_check_app_attest_config`
+    * `google_firebase_app_check_debug_token`
+    * `google_firebase_app_check_device_check_config`
+    * `google_firebase_app_check_play_integrity_config`
+    * `google_firebase_app_check_recaptcha_enterprise_config`
+    * `google_firebase_app_check_recaptcha_v3_config`
+    * `google_firebase_app_check_resource_policy`
+    * `google_firebase_app_check_service_config`
+    * `google_firebase_app_hosting_backend`
+    * `google_firebase_app_hosting_build`
+    * `google_firebase_app_hosting_default_domain`
+    * `google_firebase_app_hosting_domain`
+    * `google_firebase_app_hosting_traffic`
+    * `google_firebase_apple_app`
+    * `google_firebase_data_connect_service`
+    * `google_firebase_database_instance`
+    * `google_firebase_extensions_instance`
+    * `google_firebase_hosting_channel`
+    * `google_firebase_hosting_custom_domain`
+    * `google_firebase_hosting_release`
+    * `google_firebase_hosting_site`
+    * `google_firebase_hosting_version`
+    * `google_firebase_project`
+    * `google_firebase_remote_config_remote_config`
+    * `google_firebase_storage_bucket`
+    * `google_firebase_storage_default_bucket`
+    * `google_firebase_web_app`
+    * `google_firebaserules_release`
+    * `google_firebaserules_ruleset`
 *   `firewall`
     * `google_compute_firewall`
 *   `forwardingRules`
     * `google_compute_forwarding_rule`
 *   `gcs`
+    * `google_storage_anywhere_cache`
+    * `google_storage_batch_operations_job`
     * `google_storage_bucket`
+    * `google_storage_bucket_access_control`
     * `google_storage_bucket_acl`
     * `google_storage_bucket_iam_binding`
     * `google_storage_bucket_iam_member`
     * `google_storage_bucket_iam_policy`
+    * `google_storage_bucket_object`
+    * `google_storage_control_folder_intelligence_config`
+    * `google_storage_control_organization_intelligence_config`
+    * `google_storage_control_project_feature_config`
+    * `google_storage_control_project_intelligence_config`
+    * `google_storage_default_object_access_control`
     * `google_storage_default_object_acl`
+    * `google_storage_folder`
+    * `google_storage_ftp_server`
+    * `google_storage_ftp_user`
+    * `google_storage_hmac_key`
+    * `google_storage_managed_folder`
+    * `google_storage_managed_folder_iam`
     * `google_storage_notification`
+    * `google_storage_object_access_control`
+    * `google_storage_object_acl`
+*   `gemini`
+    * `google_gemini_code_repository_index`
+    * `google_gemini_code_tools_setting`
+    * `google_gemini_code_tools_setting_binding`
+    * `google_gemini_data_analytics_data_agent`
+    * `google_gemini_data_analytics_data_agent_iam`
+    * `google_gemini_data_sharing_with_google_setting`
+    * `google_gemini_data_sharing_with_google_setting_binding`
+    * `google_gemini_gda_observability_setting`
+    * `google_gemini_gda_observability_setting_binding`
+    * `google_gemini_gemini_gcp_enablement_setting`
+    * `google_gemini_gemini_gcp_enablement_setting_binding`
+    * `google_gemini_gibq_observability_setting`
+    * `google_gemini_gibq_observability_setting_binding`
+    * `google_gemini_logging_setting`
+    * `google_gemini_logging_setting_binding`
+    * `google_gemini_release_channel_setting`
+    * `google_gemini_release_channel_setting_binding`
+    * `google_gemini_repository_group`
+    * `google_gemini_repository_group_iam`
 *   `gke`
     * `google_container_cluster`
     * `google_container_node_pool`
