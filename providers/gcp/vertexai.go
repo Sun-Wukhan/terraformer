@@ -1,0 +1,614 @@
+// Copyright 2026 The Terraformer Authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package gcp
+
+import (
+	"context"
+	"log"
+	"strings"
+
+	"github.com/GoogleCloudPlatform/terraformer/terraformutils"
+	"google.golang.org/api/aiplatform/v1"
+	"google.golang.org/api/compute/v1"
+	"google.golang.org/api/option"
+)
+
+var vertexAiAllowEmptyValues = []string{"tags."}
+
+var vertexAiAdditionalFields = map[string]interface{}{}
+
+type VertexAiGenerator struct {
+	GCPService
+}
+
+// InitResources enumerates the Vertex AI surface of one project/location:
+// datasets, endpoints, indexes and their deployed indexes, metadata stores,
+// legacy featurestores (with entity types, features and IAM), feature groups,
+// feature online stores (with feature views and IAM), tensorboards (with
+// experiments and runs), custom jobs, pipeline jobs, deployment resource
+// pools, persistent resources, RAG corpora and files, reasoning engines and
+// the per-project cache config singleton.
+//
+// Deliberately not generated (no enumeration path in the GA aiplatform
+// client, verified against the aiplatform v1 discovery document):
+//   - google_vertex_ai_agent_anomaly_detection_scope,
+//     google_vertex_ai_evaluation_metric,
+//     google_vertex_ai_model_development_cluster,
+//     google_vertex_ai_model_garden_enable_model,
+//     google_vertex_ai_online_evaluator, google_vertex_ai_rag_engine_config,
+//     google_vertex_ai_semantic_governance_policy and
+//     google_vertex_ai_semantic_governance_policy_engine: no list or get
+//     collection exists for these in aiplatform v1 or v1beta1.
+//   - google_vertex_ai_endpoint_iam and
+//     google_vertex_ai_reasoning_engine_iam: endpoints and reasoning engines
+//     expose no getIamPolicy in the GA aiplatform v1 client (only v1beta1
+//     endpoints do), and this provider's generators use GA clients only.
+//   - google_vertex_ai_endpoint_with_model_garden_deployment: model-garden
+//     deployments are ordinary entries of the same endpoints collection that
+//     google_vertex_ai_endpoint already enumerates; they cannot be told
+//     apart from the List response, so generating both would double-emit
+//     the same API objects.
+func (g *VertexAiGenerator) InitResources() error {
+	ctx := context.Background()
+	region := g.GetArgs()["region"].(compute.Region).Name
+	options := []option.ClientOption{}
+	if region != "" {
+		// Vertex AI resources live behind regional endpoints.
+		options = append(options, option.WithEndpoint("https://"+region+"-aiplatform.googleapis.com/v1/"))
+	}
+	service, err := aiplatform.NewService(ctx, options...)
+	if err != nil {
+		return err
+	}
+	return g.initResources(ctx, service)
+}
+
+func (g *VertexAiGenerator) initResources(ctx context.Context, service *aiplatform.Service) error {
+	project := g.GetArgs()["project"].(string)
+	region := g.GetArgs()["region"].(compute.Region).Name
+	parent := "projects/" + project + "/locations/" + region
+
+	for _, load := range []func(context.Context, *aiplatform.Service, string) error{
+		g.loadDatasets,
+		g.loadEndpoints,
+		g.loadIndexes,
+		g.loadIndexEndpoints,
+		g.loadMetadataStores,
+		g.loadFeaturestores,
+		g.loadFeatureGroups,
+		g.loadFeatureOnlineStores,
+		g.loadTensorboards,
+		g.loadCustomJobs,
+		g.loadPipelineJobs,
+		g.loadDeploymentResourcePools,
+		g.loadPersistentResources,
+		g.loadRagCorpora,
+		g.loadReasoningEngines,
+	} {
+		if err := load(ctx, service, parent); err != nil {
+			return err
+		}
+	}
+	return g.loadCacheConfig(ctx, service, project)
+}
+
+func vertexLabel(name, displayName string) string {
+	if displayName != "" {
+		return displayName
+	}
+	parts := strings.Split(name, "/")
+	return parts[len(parts)-1]
+}
+
+func (g *VertexAiGenerator) baseAttrs() map[string]string {
+	return map[string]string{
+		"project": g.GetArgs()["project"].(string),
+		"region":  g.GetArgs()["region"].(compute.Region).Name,
+	}
+}
+
+func (g *VertexAiGenerator) newVertexResource(id, name, resourceType string, attrs map[string]string) terraformutils.Resource {
+	merged := g.baseAttrs()
+	for k, v := range attrs {
+		merged[k] = v
+	}
+	return terraformutils.NewResource(
+		id,
+		name,
+		resourceType,
+		g.ProviderName,
+		merged,
+		vertexAiAllowEmptyValues,
+		vertexAiAdditionalFields,
+	)
+}
+
+// appendVertexIam appends the google_vertex_ai_*_iam_policy/_binding/_member
+// resources for one parent, following the pattern used for GCS bucket IAM:
+// the policy resource is emitted whenever the parent exists, bindings and
+// members come from the parent's live IAM policy.
+func (g *VertexAiGenerator) appendVertexIam(resources []terraformutils.Resource, parentName, resourcePrefix string, policy *aiplatform.GoogleIamV1Policy, parentAttrs map[string]string) []terraformutils.Resource {
+	resources = append(resources, g.newVertexResource(
+		parentName,
+		parentName,
+		resourcePrefix+"_iam_policy",
+		parentAttrs,
+	))
+	if policy == nil {
+		return resources
+	}
+	for _, binding := range policy.Bindings {
+		bindingAttrs := map[string]string{"role": binding.Role}
+		for k, v := range parentAttrs {
+			bindingAttrs[k] = v
+		}
+		resources = append(resources, g.newVertexResource(
+			parentName,
+			parentName,
+			resourcePrefix+"_iam_binding",
+			bindingAttrs,
+		))
+		for _, member := range binding.Members {
+			memberAttrs := map[string]string{"role": binding.Role, "member": member}
+			for k, v := range parentAttrs {
+				memberAttrs[k] = v
+			}
+			resources = append(resources, g.newVertexResource(
+				parentName,
+				parentName,
+				resourcePrefix+"_iam_member",
+				memberAttrs,
+			))
+		}
+	}
+	return resources
+}
+
+func (g *VertexAiGenerator) loadDatasets(ctx context.Context, service *aiplatform.Service, parent string) error {
+	return service.Projects.Locations.Datasets.List(parent).Pages(ctx, func(page *aiplatform.GoogleCloudAiplatformV1ListDatasetsResponse) error {
+		for _, dataset := range page.Datasets {
+			g.Resources = append(g.Resources, g.newVertexResource(
+				dataset.Name,
+				vertexLabel(dataset.Name, dataset.DisplayName),
+				"google_vertex_ai_dataset",
+				map[string]string{"name": dataset.Name},
+			))
+		}
+		return nil
+	})
+}
+
+func (g *VertexAiGenerator) loadEndpoints(ctx context.Context, service *aiplatform.Service, parent string) error {
+	return service.Projects.Locations.Endpoints.List(parent).Pages(ctx, func(page *aiplatform.GoogleCloudAiplatformV1ListEndpointsResponse) error {
+		for _, endpoint := range page.Endpoints {
+			g.Resources = append(g.Resources, g.newVertexResource(
+				endpoint.Name,
+				vertexLabel(endpoint.Name, endpoint.DisplayName),
+				"google_vertex_ai_endpoint",
+				map[string]string{"name": endpoint.Name},
+			))
+		}
+		return nil
+	})
+}
+
+func (g *VertexAiGenerator) loadIndexes(ctx context.Context, service *aiplatform.Service, parent string) error {
+	return service.Projects.Locations.Indexes.List(parent).Pages(ctx, func(page *aiplatform.GoogleCloudAiplatformV1ListIndexesResponse) error {
+		for _, index := range page.Indexes {
+			g.Resources = append(g.Resources, g.newVertexResource(
+				index.Name,
+				vertexLabel(index.Name, index.DisplayName),
+				"google_vertex_ai_index",
+				map[string]string{"name": index.Name},
+			))
+		}
+		return nil
+	})
+}
+
+func (g *VertexAiGenerator) loadIndexEndpoints(ctx context.Context, service *aiplatform.Service, parent string) error {
+	return service.Projects.Locations.IndexEndpoints.List(parent).Pages(ctx, func(page *aiplatform.GoogleCloudAiplatformV1ListIndexEndpointsResponse) error {
+		for _, indexEndpoint := range page.IndexEndpoints {
+			g.Resources = append(g.Resources, g.newVertexResource(
+				indexEndpoint.Name,
+				vertexLabel(indexEndpoint.Name, indexEndpoint.DisplayName),
+				"google_vertex_ai_index_endpoint",
+				map[string]string{"name": indexEndpoint.Name},
+			))
+			// Deployed indexes are embedded in the index endpoint; the
+			// provider ID joins them with a singular "deployedIndex"
+			// segment: {indexEndpoint}/deployedIndex/{deployed_index_id}.
+			for _, deployed := range indexEndpoint.DeployedIndexes {
+				g.Resources = append(g.Resources, g.newVertexResource(
+					indexEndpoint.Name+"/deployedIndex/"+deployed.Id,
+					vertexLabel(deployed.Id, deployed.DisplayName),
+					"google_vertex_ai_index_endpoint_deployed_index",
+					map[string]string{
+						"index_endpoint":    indexEndpoint.Name,
+						"deployed_index_id": deployed.Id,
+						"index":             deployed.Index,
+					},
+				))
+			}
+		}
+		return nil
+	})
+}
+
+func (g *VertexAiGenerator) loadMetadataStores(ctx context.Context, service *aiplatform.Service, parent string) error {
+	return service.Projects.Locations.MetadataStores.List(parent).Pages(ctx, func(page *aiplatform.GoogleCloudAiplatformV1ListMetadataStoresResponse) error {
+		for _, store := range page.MetadataStores {
+			g.Resources = append(g.Resources, g.newVertexResource(
+				store.Name,
+				vertexLabel(store.Name, ""),
+				"google_vertex_ai_metadata_store",
+				map[string]string{"name": store.Name},
+			))
+		}
+		return nil
+	})
+}
+
+func (g *VertexAiGenerator) loadFeaturestores(ctx context.Context, service *aiplatform.Service, parent string) error {
+	return service.Projects.Locations.Featurestores.List(parent).Pages(ctx, func(page *aiplatform.GoogleCloudAiplatformV1ListFeaturestoresResponse) error {
+		for _, featurestore := range page.Featurestores {
+			g.Resources = append(g.Resources, g.newVertexResource(
+				featurestore.Name,
+				vertexLabel(featurestore.Name, ""),
+				"google_vertex_ai_featurestore",
+				map[string]string{"name": featurestore.Name},
+			))
+			g.Resources = append(g.Resources, g.loadFeaturestoreIam(ctx, service, featurestore.Name)...)
+			if err := g.loadEntityTypes(ctx, service, featurestore.Name); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+func (g *VertexAiGenerator) loadFeaturestoreIam(ctx context.Context, service *aiplatform.Service, featurestoreName string) []terraformutils.Resource {
+	resources := []terraformutils.Resource{}
+	policy, err := service.Projects.Locations.Featurestores.GetIamPolicy(featurestoreName).Context(ctx).Do()
+	if err != nil {
+		log.Println(err)
+		return resources
+	}
+	return g.appendVertexIam(resources, featurestoreName, "google_vertex_ai_featurestore",
+		policy, map[string]string{"featurestore": featurestoreName})
+}
+
+func (g *VertexAiGenerator) loadEntityTypes(ctx context.Context, service *aiplatform.Service, featurestoreName string) error {
+	return service.Projects.Locations.Featurestores.EntityTypes.List(featurestoreName).Pages(ctx, func(page *aiplatform.GoogleCloudAiplatformV1ListEntityTypesResponse) error {
+		for _, entityType := range page.EntityTypes {
+			g.Resources = append(g.Resources, g.newVertexResource(
+				entityType.Name,
+				vertexLabel(entityType.Name, ""),
+				"google_vertex_ai_featurestore_entitytype",
+				map[string]string{
+					"name":         entityType.Name,
+					"featurestore": featurestoreName,
+				},
+			))
+			g.Resources = append(g.Resources, g.loadEntityTypeIam(ctx, service, featurestoreName, entityType.Name)...)
+			if err := g.loadEntityTypeFeatures(ctx, service, entityType.Name); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+func (g *VertexAiGenerator) loadEntityTypeIam(ctx context.Context, service *aiplatform.Service, featurestoreName, entityTypeName string) []terraformutils.Resource {
+	resources := []terraformutils.Resource{}
+	policy, err := service.Projects.Locations.Featurestores.EntityTypes.GetIamPolicy(entityTypeName).Context(ctx).Do()
+	if err != nil {
+		log.Println(err)
+		return resources
+	}
+	return g.appendVertexIam(resources, entityTypeName, "google_vertex_ai_featurestore_entitytype",
+		policy, map[string]string{
+			"featurestore": featurestoreName,
+			"entitytype":   entityTypeName,
+		})
+}
+
+func (g *VertexAiGenerator) loadEntityTypeFeatures(ctx context.Context, service *aiplatform.Service, entityTypeName string) error {
+	return service.Projects.Locations.Featurestores.EntityTypes.Features.List(entityTypeName).Pages(ctx, func(page *aiplatform.GoogleCloudAiplatformV1ListFeaturesResponse) error {
+		for _, feature := range page.Features {
+			g.Resources = append(g.Resources, g.newVertexResource(
+				feature.Name,
+				vertexLabel(feature.Name, ""),
+				"google_vertex_ai_featurestore_entitytype_feature",
+				map[string]string{
+					"name":        feature.Name,
+					"entity_type": entityTypeName,
+				},
+			))
+		}
+		return nil
+	})
+}
+
+func (g *VertexAiGenerator) loadFeatureGroups(ctx context.Context, service *aiplatform.Service, parent string) error {
+	return service.Projects.Locations.FeatureGroups.List(parent).Pages(ctx, func(page *aiplatform.GoogleCloudAiplatformV1ListFeatureGroupsResponse) error {
+		for _, group := range page.FeatureGroups {
+			g.Resources = append(g.Resources, g.newVertexResource(
+				group.Name,
+				vertexLabel(group.Name, ""),
+				"google_vertex_ai_feature_group",
+				map[string]string{"name": group.Name},
+			))
+			policy, err := service.Projects.Locations.FeatureGroups.GetIamPolicy(group.Name).Context(ctx).Do()
+			if err != nil {
+				log.Println(err)
+			} else {
+				g.Resources = g.appendVertexIam(g.Resources, group.Name, "google_vertex_ai_feature_group",
+					policy, map[string]string{"feature_group": group.Name})
+			}
+			if err := g.loadFeatureGroupFeatures(ctx, service, group.Name); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+func (g *VertexAiGenerator) loadFeatureGroupFeatures(ctx context.Context, service *aiplatform.Service, groupName string) error {
+	return service.Projects.Locations.FeatureGroups.Features.List(groupName).Pages(ctx, func(page *aiplatform.GoogleCloudAiplatformV1ListFeaturesResponse) error {
+		for _, feature := range page.Features {
+			g.Resources = append(g.Resources, g.newVertexResource(
+				feature.Name,
+				vertexLabel(feature.Name, ""),
+				"google_vertex_ai_feature_group_feature",
+				map[string]string{
+					"name":          feature.Name,
+					"feature_group": groupName,
+				},
+			))
+		}
+		return nil
+	})
+}
+
+func (g *VertexAiGenerator) loadFeatureOnlineStores(ctx context.Context, service *aiplatform.Service, parent string) error {
+	return service.Projects.Locations.FeatureOnlineStores.List(parent).Pages(ctx, func(page *aiplatform.GoogleCloudAiplatformV1ListFeatureOnlineStoresResponse) error {
+		for _, store := range page.FeatureOnlineStores {
+			g.Resources = append(g.Resources, g.newVertexResource(
+				store.Name,
+				vertexLabel(store.Name, ""),
+				"google_vertex_ai_feature_online_store",
+				map[string]string{"name": store.Name},
+			))
+			policy, err := service.Projects.Locations.FeatureOnlineStores.GetIamPolicy(store.Name).Context(ctx).Do()
+			if err != nil {
+				log.Println(err)
+			} else {
+				g.Resources = g.appendVertexIam(g.Resources, store.Name, "google_vertex_ai_feature_online_store",
+					policy, map[string]string{"feature_online_store": store.Name})
+			}
+			if err := g.loadFeatureViews(ctx, service, store.Name); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+func (g *VertexAiGenerator) loadFeatureViews(ctx context.Context, service *aiplatform.Service, storeName string) error {
+	return service.Projects.Locations.FeatureOnlineStores.FeatureViews.List(storeName).Pages(ctx, func(page *aiplatform.GoogleCloudAiplatformV1ListFeatureViewsResponse) error {
+		for _, view := range page.FeatureViews {
+			g.Resources = append(g.Resources, g.newVertexResource(
+				view.Name,
+				vertexLabel(view.Name, ""),
+				"google_vertex_ai_feature_online_store_featureview",
+				map[string]string{
+					"name":                 view.Name,
+					"feature_online_store": storeName,
+				},
+			))
+			policy, err := service.Projects.Locations.FeatureOnlineStores.FeatureViews.GetIamPolicy(view.Name).Context(ctx).Do()
+			if err != nil {
+				log.Println(err)
+			} else {
+				g.Resources = g.appendVertexIam(g.Resources, view.Name, "google_vertex_ai_feature_online_store_featureview",
+					policy, map[string]string{
+						"feature_online_store": storeName,
+						"feature_view":         view.Name,
+					})
+			}
+		}
+		return nil
+	})
+}
+
+func (g *VertexAiGenerator) loadTensorboards(ctx context.Context, service *aiplatform.Service, parent string) error {
+	return service.Projects.Locations.Tensorboards.List(parent).Pages(ctx, func(page *aiplatform.GoogleCloudAiplatformV1ListTensorboardsResponse) error {
+		for _, tensorboard := range page.Tensorboards {
+			g.Resources = append(g.Resources, g.newVertexResource(
+				tensorboard.Name,
+				vertexLabel(tensorboard.Name, tensorboard.DisplayName),
+				"google_vertex_ai_tensorboard",
+				map[string]string{"name": tensorboard.Name},
+			))
+			if err := g.loadTensorboardExperiments(ctx, service, tensorboard.Name); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+func (g *VertexAiGenerator) loadTensorboardExperiments(ctx context.Context, service *aiplatform.Service, tensorboardName string) error {
+	return service.Projects.Locations.Tensorboards.Experiments.List(tensorboardName).Pages(ctx, func(page *aiplatform.GoogleCloudAiplatformV1ListTensorboardExperimentsResponse) error {
+		for _, experiment := range page.TensorboardExperiments {
+			g.Resources = append(g.Resources, g.newVertexResource(
+				experiment.Name,
+				vertexLabel(experiment.Name, experiment.DisplayName),
+				"google_vertex_ai_tensorboard_experiment",
+				map[string]string{
+					"name":        experiment.Name,
+					"tensorboard": tensorboardName,
+				},
+			))
+			if err := g.loadTensorboardRuns(ctx, service, experiment.Name); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+func (g *VertexAiGenerator) loadTensorboardRuns(ctx context.Context, service *aiplatform.Service, experimentName string) error {
+	return service.Projects.Locations.Tensorboards.Experiments.Runs.List(experimentName).Pages(ctx, func(page *aiplatform.GoogleCloudAiplatformV1ListTensorboardRunsResponse) error {
+		for _, run := range page.TensorboardRuns {
+			g.Resources = append(g.Resources, g.newVertexResource(
+				run.Name,
+				vertexLabel(run.Name, run.DisplayName),
+				"google_vertex_ai_tensorboard_run",
+				map[string]string{
+					"name":       run.Name,
+					"experiment": experimentName,
+				},
+			))
+		}
+		return nil
+	})
+}
+
+func (g *VertexAiGenerator) loadCustomJobs(ctx context.Context, service *aiplatform.Service, parent string) error {
+	return service.Projects.Locations.CustomJobs.List(parent).Pages(ctx, func(page *aiplatform.GoogleCloudAiplatformV1ListCustomJobsResponse) error {
+		for _, job := range page.CustomJobs {
+			g.Resources = append(g.Resources, g.newVertexResource(
+				job.Name,
+				vertexLabel(job.Name, job.DisplayName),
+				"google_vertex_ai_custom_job",
+				map[string]string{"name": job.Name},
+			))
+		}
+		return nil
+	})
+}
+
+func (g *VertexAiGenerator) loadPipelineJobs(ctx context.Context, service *aiplatform.Service, parent string) error {
+	return service.Projects.Locations.PipelineJobs.List(parent).Pages(ctx, func(page *aiplatform.GoogleCloudAiplatformV1ListPipelineJobsResponse) error {
+		for _, job := range page.PipelineJobs {
+			g.Resources = append(g.Resources, g.newVertexResource(
+				job.Name,
+				vertexLabel(job.Name, job.DisplayName),
+				"google_vertex_ai_pipeline_job",
+				map[string]string{"name": job.Name},
+			))
+		}
+		return nil
+	})
+}
+
+func (g *VertexAiGenerator) loadDeploymentResourcePools(ctx context.Context, service *aiplatform.Service, parent string) error {
+	return service.Projects.Locations.DeploymentResourcePools.List(parent).Pages(ctx, func(page *aiplatform.GoogleCloudAiplatformV1ListDeploymentResourcePoolsResponse) error {
+		for _, pool := range page.DeploymentResourcePools {
+			g.Resources = append(g.Resources, g.newVertexResource(
+				pool.Name,
+				vertexLabel(pool.Name, ""),
+				"google_vertex_ai_deployment_resource_pool",
+				map[string]string{"name": pool.Name},
+			))
+		}
+		return nil
+	})
+}
+
+func (g *VertexAiGenerator) loadPersistentResources(ctx context.Context, service *aiplatform.Service, parent string) error {
+	return service.Projects.Locations.PersistentResources.List(parent).Pages(ctx, func(page *aiplatform.GoogleCloudAiplatformV1ListPersistentResourcesResponse) error {
+		for _, resource := range page.PersistentResources {
+			g.Resources = append(g.Resources, g.newVertexResource(
+				resource.Name,
+				vertexLabel(resource.Name, resource.DisplayName),
+				"google_vertex_ai_persistent_resource",
+				map[string]string{"name": resource.Name},
+			))
+		}
+		return nil
+	})
+}
+
+func (g *VertexAiGenerator) loadRagCorpora(ctx context.Context, service *aiplatform.Service, parent string) error {
+	return service.Projects.Locations.RagCorpora.List(parent).Pages(ctx, func(page *aiplatform.GoogleCloudAiplatformV1ListRagCorporaResponse) error {
+		for _, corpus := range page.RagCorpora {
+			g.Resources = append(g.Resources, g.newVertexResource(
+				corpus.Name,
+				vertexLabel(corpus.Name, corpus.DisplayName),
+				"google_vertex_ai_rag_corpus",
+				map[string]string{"name": corpus.Name},
+			))
+			if err := g.loadRagFiles(ctx, service, corpus.Name); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+func (g *VertexAiGenerator) loadRagFiles(ctx context.Context, service *aiplatform.Service, corpusName string) error {
+	return service.Projects.Locations.RagCorpora.RagFiles.List(corpusName).Pages(ctx, func(page *aiplatform.GoogleCloudAiplatformV1ListRagFilesResponse) error {
+		for _, file := range page.RagFiles {
+			g.Resources = append(g.Resources, g.newVertexResource(
+				file.Name,
+				vertexLabel(file.Name, file.DisplayName),
+				"google_vertex_ai_rag_file",
+				map[string]string{
+					"name":       file.Name,
+					"rag_corpus": corpusName,
+				},
+			))
+		}
+		return nil
+	})
+}
+
+func (g *VertexAiGenerator) loadReasoningEngines(ctx context.Context, service *aiplatform.Service, parent string) error {
+	return service.Projects.Locations.ReasoningEngines.List(parent).Pages(ctx, func(page *aiplatform.GoogleCloudAiplatformV1ListReasoningEnginesResponse) error {
+		for _, engine := range page.ReasoningEngines {
+			g.Resources = append(g.Resources, g.newVertexResource(
+				engine.Name,
+				vertexLabel(engine.Name, engine.DisplayName),
+				"google_vertex_ai_reasoning_engine",
+				map[string]string{"name": engine.Name},
+			))
+		}
+		return nil
+	})
+}
+
+// loadCacheConfig emits the per-project cache config singleton. The cache
+// config always exists (the API returns the effective config), and its
+// provider ID is projects/{project}/cacheConfig.
+func (g *VertexAiGenerator) loadCacheConfig(ctx context.Context, service *aiplatform.Service, project string) error {
+	config, err := service.Projects.GetCacheConfig("projects/" + project).Context(ctx).Do()
+	if err != nil {
+		return err
+	}
+	name := "projects/" + project + "/cacheConfig"
+	if config.Name != "" {
+		name = config.Name
+	}
+	g.Resources = append(g.Resources, g.newVertexResource(
+		name,
+		"cache_config",
+		"google_vertex_ai_cache_config",
+		map[string]string{"name": name},
+	))
+	return nil
+}
