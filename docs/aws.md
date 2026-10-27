@@ -146,6 +146,24 @@ terraformer import aws --resources=sg --regions=us-east-1
     * `aws_config_config_rule`
     * `aws_config_configuration_recorder`
     * `aws_config_delivery_channel`
+*   `connect`
+    * `aws_connect_bot_association`
+    * `aws_connect_contact_flow`
+    * `aws_connect_contact_flow_module`
+    * `aws_connect_hours_of_operation`
+    * `aws_connect_instance`
+    * `aws_connect_instance_storage_config`
+    * `aws_connect_lambda_function_association`
+    * `aws_connect_phone_number`
+    * `aws_connect_phone_number_contact_flow_association`
+    * `aws_connect_queue`
+    * `aws_connect_quick_connect`
+    * `aws_connect_routing_profile`
+    * `aws_connect_security_profile`
+    * `aws_connect_user`
+    * `aws_connect_user_hierarchy_group`
+    * `aws_connect_user_hierarchy_structure`
+    * `aws_connect_vocabulary`
 *   `customer_gateway`
     * `aws_customer_gateway`
 *   `datapipeline`
@@ -284,6 +302,27 @@ terraformer import aws --resources=sg --regions=us-east-1
     * `aws_network_acl`
 *   `nat`
     * `aws_nat_gateway`
+*   `networkmanager`
+    * `aws_networkmanager_attachment_routing_policy_label`
+    * `aws_networkmanager_connect_attachment`
+    * `aws_networkmanager_connect_peer`
+    * `aws_networkmanager_connection`
+    * `aws_networkmanager_core_network`
+    * `aws_networkmanager_core_network_policy_attachment`
+    * `aws_networkmanager_customer_gateway_association`
+    * `aws_networkmanager_device`
+    * `aws_networkmanager_dx_gateway_attachment`
+    * `aws_networkmanager_global_network`
+    * `aws_networkmanager_link`
+    * `aws_networkmanager_link_association`
+    * `aws_networkmanager_prefix_list_association`
+    * `aws_networkmanager_site`
+    * `aws_networkmanager_site_to_site_vpn_attachment`
+    * `aws_networkmanager_transit_gateway_connect_peer_association`
+    * `aws_networkmanager_transit_gateway_peering`
+    * `aws_networkmanager_transit_gateway_registration`
+    * `aws_networkmanager_transit_gateway_route_table_attachment`
+    * `aws_networkmanager_vpc_attachment`
 *   `opsworks`
     * `aws_opsworks_application`
     * `aws_opsworks_custom_layer`
@@ -429,6 +468,20 @@ terraformer import aws --resources=sg --regions=us-east-1
     * `aws_sqs_queue`
 *   `ssm`
     * `aws_ssm_parameter`
+*   `ssoadmin`
+    * `aws_ssoadmin_account_assignment`
+    * `aws_ssoadmin_application`
+    * `aws_ssoadmin_application_access_scope`
+    * `aws_ssoadmin_application_assignment`
+    * `aws_ssoadmin_application_assignment_configuration`
+    * `aws_ssoadmin_customer_managed_policy_attachment`
+    * `aws_ssoadmin_instance_access_control_attributes`
+    * `aws_ssoadmin_managed_policy_attachment`
+    * `aws_ssoadmin_permission_set`
+    * `aws_ssoadmin_permission_set_inline_policy`
+    * `aws_ssoadmin_permissions_boundary_attachment`
+    * `aws_ssoadmin_region`
+    * `aws_ssoadmin_trusted_token_issuer`
 *   `subnet`
     * `aws_subnet`
 *   `swf`
@@ -442,6 +495,21 @@ terraformer import aws --resources=sg --regions=us-east-1
     * `aws_vpc_endpoint`
 *   `vpc_peering`
     * `aws_vpc_peering_connection`
+*   `vpclattice`
+    * `aws_vpclattice_access_log_subscription`
+    * `aws_vpclattice_auth_policy`
+    * `aws_vpclattice_domain_verification`
+    * `aws_vpclattice_listener`
+    * `aws_vpclattice_listener_rule`
+    * `aws_vpclattice_resource_configuration`
+    * `aws_vpclattice_resource_gateway`
+    * `aws_vpclattice_resource_policy`
+    * `aws_vpclattice_service`
+    * `aws_vpclattice_service_network`
+    * `aws_vpclattice_service_network_resource_association`
+    * `aws_vpclattice_service_network_service_association`
+    * `aws_vpclattice_service_network_vpc_association`
+    * `aws_vpclattice_target_group`
 *   `vpn_connection`
     * `aws_vpn_connection`
 *   `vpn_gateway`
@@ -489,6 +557,25 @@ terraformer import aws --resources=sg --regions=us-east-1
     * `aws_workspaces_directory`
     * `aws_workspaces_ip_group`
     * `aws_workspaces_workspace`
+*   `workspacesweb`
+    * `aws_workspacesweb_browser_settings`
+    * `aws_workspacesweb_browser_settings_association`
+    * `aws_workspacesweb_data_protection_settings`
+    * `aws_workspacesweb_data_protection_settings_association`
+    * `aws_workspacesweb_identity_provider`
+    * `aws_workspacesweb_ip_access_settings`
+    * `aws_workspacesweb_ip_access_settings_association`
+    * `aws_workspacesweb_network_settings`
+    * `aws_workspacesweb_network_settings_association`
+    * `aws_workspacesweb_portal`
+    * `aws_workspacesweb_session_logger`
+    * `aws_workspacesweb_session_logger_association`
+    * `aws_workspacesweb_trust_store`
+    * `aws_workspacesweb_trust_store_association`
+    * `aws_workspacesweb_user_access_logging_settings`
+    * `aws_workspacesweb_user_access_logging_settings_association`
+    * `aws_workspacesweb_user_settings`
+    * `aws_workspacesweb_user_settings_association`
 *   `xray`
     * `aws_xray_sampling_rule`
 
