@@ -96,7 +96,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sns v1.26.5
 	github.com/aws/aws-sdk-go-v2/service/sqs v1.29.5
 	github.com/aws/aws-sdk-go-v2/service/ssm v1.44.5
-	github.com/aws/aws-sdk-go-v2/service/ssoadmin v1.23.5
+	github.com/aws/aws-sdk-go-v2/service/ssoadmin v1.52.0
 	github.com/aws/aws-sdk-go-v2/service/sts v1.26.5
 	github.com/aws/aws-sdk-go-v2/service/swf v1.20.5
 	github.com/aws/aws-sdk-go-v2/service/waf v1.18.5
@@ -463,11 +463,15 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/bedrock v1.74.1
 	github.com/aws/aws-sdk-go-v2/service/bedrockagent v1.69.1
 	github.com/aws/aws-sdk-go-v2/service/bedrockagentcorecontrol v1.75.0
+	github.com/aws/aws-sdk-go-v2/service/connect v1.209.0
 	github.com/aws/aws-sdk-go-v2/service/directconnect v1.30.1
 	github.com/aws/aws-sdk-go-v2/service/lightsail v1.67.1
+	github.com/aws/aws-sdk-go-v2/service/networkmanager v1.51.0
 	github.com/aws/aws-sdk-go-v2/service/qbusiness v1.42.6
 	github.com/aws/aws-sdk-go-v2/service/quicksight v1.138.1
 	github.com/aws/aws-sdk-go-v2/service/sagemaker v1.284.2
+	github.com/aws/aws-sdk-go-v2/service/vpclattice v1.33.6
+	github.com/aws/aws-sdk-go-v2/service/workspacesweb v1.47.5
 	github.com/gofrs/uuid/v3 v3.1.2
 	github.com/ionos-cloud/sdk-go-cert-manager v1.0.0
 	github.com/ionos-cloud/sdk-go-container-registry v1.0.0
