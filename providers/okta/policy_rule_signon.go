@@ -51,7 +51,7 @@ func (g *SignOnPolicyRuleGenerator) InitResources() error {
 		return e
 	}
 
-	signOnPolicies, err := getSignOnPolicies(ctx, client)
+	signOnPolicies, err := getSignOnPolicies(ctx, client, &g.Service)
 	if err != nil {
 		return err
 	}
@@ -82,7 +82,11 @@ func getSignOnPolicyRules(g *SignOnPolicyRuleGenerator, policyID string) ([]sdk.
 
 	for resp.HasNextPage() {
 		var nextPolicySet []sdk.PolicyRule
-		resp, _ = resp.Next(ctx, &nextPolicySet)
+		resp, err = resp.Next(ctx, &nextPolicySet)
+		if err != nil {
+			g.RecordFailure("okta_policy_rule_signon", err)
+			break
+		}
 		output = append(output, nextPolicySet...)
 	}
 

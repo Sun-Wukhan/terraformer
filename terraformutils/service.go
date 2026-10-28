@@ -35,6 +35,8 @@ type ServiceGenerator interface {
 	SetProviderName(name string)
 	GetProviderName() string
 	GetName() string
+	SetReport(report *ImportReport)
+	GetReport() *ImportReport
 	InitialCleanup()
 	PopulateIgnoreKeys(*providerwrapper.ProviderWrapper)
 	PostRefreshCleanup()
@@ -47,6 +49,11 @@ type Service struct {
 	Args         map[string]interface{}
 	Filter       []ResourceFilter
 	Verbose      bool
+	// Report, when set by the import command, collects enumeration
+	// failures that occur inside InitResources so they surface in the
+	// end-of-run summary and terraformer-failures.json instead of only
+	// as log lines. Nil in tests and other non-import callers.
+	Report *ImportReport
 }
 
 func (s *Service) SetProviderName(providerName string) {
@@ -59,6 +66,34 @@ func (s *Service) GetProviderName() string {
 
 func (s *Service) SetVerbose(verbose bool) {
 	s.Verbose = verbose
+}
+
+// SetReport attaches the run's ImportReport so failures encountered while
+// enumerating this service's resources are accounted for at the end of the
+// run (and fail it under --strict).
+func (s *Service) SetReport(report *ImportReport) {
+	s.Report = report
+}
+
+func (s *Service) GetReport() *ImportReport {
+	return s.Report
+}
+
+// RecordFailure notes that enumerating resources of the given type failed
+// with err, so a silently partial import shows up in the run summary and
+// terraformer-failures.json. It is a no-op when no report is attached or
+// err is nil, so generators may call it unconditionally on error paths
+// that previously only logged the error and continued.
+func (s *Service) RecordFailure(resourceType string, err error) {
+	if s.Report == nil || err == nil {
+		return
+	}
+	s.Report.RecordFailure(ImportFailure{
+		Stage:        StageEnumerate,
+		Service:      s.Name,
+		ResourceType: resourceType,
+		Error:        err.Error(),
+	})
 }
 
 func (s *Service) ParseFilters(rawFilters []string) {

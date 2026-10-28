@@ -106,16 +106,19 @@ func (g *TransitGatewayGenerator) InitResources() error {
 	err := g.getTransitGateways(svc)
 	if err != nil {
 		log.Println(err)
+		g.RecordFailure("aws_ec2_transit_gateway", err)
 	}
 
 	err = g.getTransitGatewayRouteTables(svc)
 	if err != nil {
 		log.Println(err)
+		g.RecordFailure("aws_ec2_transit_gateway_route_table", err)
 	}
 
 	err = g.getTransitGatewayVpcAttachments(svc)
 	if err != nil {
 		log.Println(err)
+		g.RecordFailure("aws_ec2_transit_gateway_vpc_attachment", err)
 	}
 
 	return nil

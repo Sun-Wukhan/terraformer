@@ -43,6 +43,7 @@ func (g *RepositoriesGenerator) InitResources() error {
 		repos, resp, err := client.Repositories.ListByOrg(ctx, g.GetArgs()["owner"].(string), opt)
 		if err != nil {
 			log.Println(err)
+			g.RecordFailure("github_repository", err)
 			return nil
 		}
 		for _, repo := range repos {

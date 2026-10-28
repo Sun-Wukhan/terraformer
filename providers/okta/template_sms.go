@@ -50,7 +50,11 @@ func (g *SMSTemplateGenerator) InitResources() error {
 
 	for resp.HasNextPage() {
 		var nextSmsTemplateSet []*okta.SmsTemplate
-		resp, _ = resp.Next(ctx, &nextSmsTemplateSet)
+		resp, err = resp.Next(ctx, &nextSmsTemplateSet)
+		if err != nil {
+			g.RecordFailure("okta_template_sms", err)
+			break
+		}
 		output = append(output, nextSmsTemplateSet...)
 	}
 

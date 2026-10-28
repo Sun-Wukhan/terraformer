@@ -49,7 +49,7 @@ func (g *AuthorizationServerGenerator) InitResources() error {
 		return e
 	}
 
-	output, err := getAuthorizationServers(ctx, client)
+	output, err := getAuthorizationServers(ctx, client, &g.Service)
 	if err != nil {
 		return e
 	}
@@ -58,7 +58,7 @@ func (g *AuthorizationServerGenerator) InitResources() error {
 	return nil
 }
 
-func getAuthorizationServers(ctx context.Context, client *okta.Client) ([]*okta.AuthorizationServer, error) {
+func getAuthorizationServers(ctx context.Context, client *okta.Client, svc *terraformutils.Service) ([]*okta.AuthorizationServer, error) {
 	output, resp, err := client.AuthorizationServer.ListAuthorizationServers(ctx, nil)
 	if err != nil {
 		return nil, err
@@ -66,7 +66,11 @@ func getAuthorizationServers(ctx context.Context, client *okta.Client) ([]*okta.
 
 	for resp.HasNextPage() {
 		var nextAuthorizationServerSet []*okta.AuthorizationServer
-		resp, _ = resp.Next(ctx, &nextAuthorizationServerSet)
+		resp, err = resp.Next(ctx, &nextAuthorizationServerSet)
+		if err != nil {
+			svc.RecordFailure("okta_auth_server", err)
+			break
+		}
 		output = append(output, nextAuthorizationServerSet...)
 	}
 

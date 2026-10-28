@@ -43,6 +43,7 @@ func (g *UserSSHKeyGenerator) InitResources() error {
 		keys, resp, err := client.Users.ListKeys(ctx, "", opt)
 		if err != nil {
 			log.Println(err)
+			g.RecordFailure("github_user_ssh_key", err)
 			return nil
 		}
 

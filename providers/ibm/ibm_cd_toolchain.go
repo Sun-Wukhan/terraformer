@@ -468,6 +468,7 @@ func (g *ToolchainGenerator) InitResources() error {
 				go func() {
 					if err := g.HandleTool(t, toolType, tID, tName, tcID, tcIDref, &toolWG); err != nil {
 						log.Println(err)
+						g.RecordFailure("", err)
 					}
 				}()
 			}

@@ -126,11 +126,14 @@ func (g *DirectConnectGenerator) InitResources() error {
 	err = g.getDirectConnectVritualInterfaces(svc)
 	if err != nil {
 		log.Println(err)
+		g.RecordFailure("aws_dx_private_virtual_interface", err)
+		g.RecordFailure("aws_dx_public_virtual_interface", err)
 	}
 
 	err = g.getDirectConnectConnections(svc)
 	if err != nil {
 		log.Println(err)
+		g.RecordFailure("aws_dx_connection", err)
 	}
 
 	return nil

@@ -46,7 +46,7 @@ func (g *IdpOIDCGenerator) InitResources() error {
 		return err
 	}
 
-	identityProviders, err := getIdpOIDC(ctx, client)
+	identityProviders, err := getIdpOIDC(ctx, client, &g.Service)
 	if err != nil {
 		return err
 	}
@@ -55,7 +55,7 @@ func (g *IdpOIDCGenerator) InitResources() error {
 	return nil
 }
 
-func getIdpOIDC(ctx context.Context, client *okta.Client) ([]*okta.IdentityProvider, error) {
+func getIdpOIDC(ctx context.Context, client *okta.Client, svc *terraformutils.Service) ([]*okta.IdentityProvider, error) {
 	qp := &query.Params{Type: "OIDC", Limit: 1}
 	output, resp, err := client.IdentityProvider.ListIdentityProviders(ctx, qp)
 	if err != nil {
@@ -64,7 +64,11 @@ func getIdpOIDC(ctx context.Context, client *okta.Client) ([]*okta.IdentityProvi
 
 	for resp.HasNextPage() {
 		var nextIdpOIDCSet []*okta.IdentityProvider
-		resp, _ = resp.Next(ctx, &nextIdpOIDCSet)
+		resp, err = resp.Next(ctx, &nextIdpOIDCSet)
+		if err != nil {
+			svc.RecordFailure("okta_idp_oidc", err)
+			break
+		}
 		output = append(output, nextIdpOIDCSet...)
 	}
 

@@ -50,6 +50,7 @@ func (g *AlbGenerator) loadLB(svc *elasticloadbalancingv2.Client) error {
 			err := g.loadLBListener(svc, lb.LoadBalancerArn)
 			if err != nil {
 				log.Println(err)
+				g.RecordFailure("aws_lb_listener", err)
 			}
 		}
 	}
@@ -75,10 +76,12 @@ func (g *AlbGenerator) loadLBListener(svc *elasticloadbalancingv2.Client, loadBa
 			err := g.loadLBListenerRule(svc, ls.ListenerArn)
 			if err != nil {
 				log.Println(err)
+				g.RecordFailure("aws_lb_listener_rule", err)
 			}
 			err = g.loadLBListenerCertificate(svc, &ls)
 			if err != nil {
 				log.Println(err)
+				g.RecordFailure("aws_lb_listener_certificate", err)
 			}
 		}
 	}
@@ -164,6 +167,7 @@ func (g *AlbGenerator) loadLBTargetGroup(svc *elasticloadbalancingv2.Client) err
 			err := g.loadTargetGroupTargets(svc, tg.TargetGroupArn)
 			if err != nil {
 				log.Println(err)
+				g.RecordFailure("aws_lb_target_group_attachment", err)
 			}
 		}
 	}

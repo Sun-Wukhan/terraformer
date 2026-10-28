@@ -47,7 +47,7 @@ func (g *IdpSocialGenerator) InitResources() error {
 		return err
 	}
 
-	identityProviders, err := getIdpSocials(ctx, client)
+	identityProviders, err := getIdpSocials(ctx, client, &g.Service)
 	if err != nil {
 		return err
 	}
@@ -56,7 +56,7 @@ func (g *IdpSocialGenerator) InitResources() error {
 	return nil
 }
 
-func getIdpSocials(ctx context.Context, client *okta.Client) ([]*okta.IdentityProvider, error) {
+func getIdpSocials(ctx context.Context, client *okta.Client, svc *terraformutils.Service) ([]*okta.IdentityProvider, error) {
 	idpSocialTypes := []string{"APPLE", "FACEBOOK", "GOOGLE", "LINKEDIN", "MICROSOFT"}
 	var allIDPSocials []*okta.IdentityProvider
 
@@ -69,7 +69,11 @@ func getIdpSocials(ctx context.Context, client *okta.Client) ([]*okta.IdentityPr
 
 		for resp.HasNextPage() {
 			var nextIdpSocialSet []*okta.IdentityProvider
-			resp, _ = resp.Next(ctx, &nextIdpSocialSet)
+			resp, err = resp.Next(ctx, &nextIdpSocialSet)
+			if err != nil {
+				svc.RecordFailure("okta_idp_social", err)
+				break
+			}
 			output = append(output, nextIdpSocialSet...)
 		}
 

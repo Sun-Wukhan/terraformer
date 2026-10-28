@@ -37,14 +37,18 @@ func (g *DocDBGenerator) InitResources() error {
 
 	if err := g.getClusters(svc); err != nil {
 		log.Println(err)
+		g.RecordFailure("aws_docdb_cluster", err)
+		g.RecordFailure("aws_docdb_cluster_instance", err)
 	}
 
 	if err := g.getSubnetGroups(svc); err != nil {
 		log.Println(err)
+		g.RecordFailure("aws_docdb_subnet_group", err)
 	}
 
 	if err := g.getParameterGroups(svc); err != nil {
 		log.Println(err)
+		g.RecordFailure("aws_docdb_cluster_parameter_group", err)
 	}
 
 	return nil

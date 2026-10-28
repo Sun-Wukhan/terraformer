@@ -190,6 +190,9 @@ func initAllServicesResources(providersMapping *terraformutils.ProvidersMapping,
 		if err != nil {
 			return err
 		}
+		// Let the service record enumeration failures that happen inside
+		// InitResources (previously only logged) into the run report.
+		serviceProvider.GetService().SetReport(report)
 		err = initServiceResources(service, serviceProvider, options, providerWrapper)
 		if err != nil {
 			failedServices = append(failedServices, service)

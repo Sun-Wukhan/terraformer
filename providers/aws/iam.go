@@ -44,26 +44,31 @@ func (g *IamGenerator) InitResources() error {
 	err := g.getUsers(svc)
 	if err != nil {
 		log.Println(err)
+		g.RecordFailure("aws_iam_user", err)
 	}
 
 	err = g.getGroups(svc)
 	if err != nil {
 		log.Println(err)
+		g.RecordFailure("aws_iam_group", err)
 	}
 
 	err = g.getPolicies(svc)
 	if err != nil {
 		log.Println(err)
+		g.RecordFailure("aws_iam_policy", err)
 	}
 
 	err = g.getRoles(svc)
 	if err != nil {
 		log.Println(err)
+		g.RecordFailure("aws_iam_role", err)
 	}
 
 	err = g.getInstanceProfiles(svc)
 	if err != nil {
 		log.Println(err)
+		g.RecordFailure("aws_iam_instance_profile", err)
 	}
 
 	return nil
@@ -89,7 +94,8 @@ func (g *IamGenerator) getRoles(svc *iam.Client) error {
 				rolePoliciesNextPage, err := rolePoliciesPage.NextPage(context.TODO())
 				if err != nil {
 					log.Println(err)
-					continue
+					g.RecordFailure("aws_iam_role_policy", err)
+					break
 				}
 				for _, policyName := range rolePoliciesNextPage.PolicyNames {
 					g.Resources = append(g.Resources, terraformutils.NewSimpleResource(
@@ -107,7 +113,8 @@ func (g *IamGenerator) getRoles(svc *iam.Client) error {
 				roleAttachedPoliciesNextPage, err := roleAttachedPoliciesPage.NextPage(context.TODO())
 				if err != nil {
 					log.Println(err)
-					continue
+					g.RecordFailure("aws_iam_role_policy_attachment", err)
+					break
 				}
 				for _, attachedPolicy := range roleAttachedPoliciesNextPage.AttachedPolicies {
 					g.Resources = append(g.Resources, terraformutils.NewResource(
@@ -150,18 +157,22 @@ func (g *IamGenerator) getUsers(svc *iam.Client) error {
 			err := g.getUserPolices(svc, user.UserName)
 			if err != nil {
 				log.Println(err)
+				g.RecordFailure("aws_iam_user_policy", err)
 			}
 			err = g.getUserPolicyAttachment(svc, user.UserName)
 			if err != nil {
 				log.Println(err)
+				g.RecordFailure("aws_iam_user_policy_attachment", err)
 			}
 			err = g.getUserGroup(svc, user.UserName)
 			if err != nil {
 				log.Println(err)
+				g.RecordFailure("aws_iam_user_group_membership", err)
 			}
 			err = g.getUserAccessKey(svc, user.UserName, StringValue(user.UserId))
 			if err != nil {
 				log.Println(err)
+				g.RecordFailure("aws_iam_access_key", err)
 			}
 		}
 	}
@@ -293,7 +304,8 @@ func (g *IamGenerator) getGroupPolicies(svc *iam.Client, group types.Group) {
 		groupPoliciesNextPage, err := groupPoliciesPage.NextPage(context.TODO())
 		if err != nil {
 			log.Println(err)
-			continue
+			g.RecordFailure("aws_iam_group_policy", err)
+			break
 		}
 		for _, policy := range groupPoliciesNextPage.PolicyNames {
 			id := *group.GroupName + ":" + policy
@@ -317,7 +329,8 @@ func (g *IamGenerator) getAttachedGroupPolicies(svc *iam.Client, group types.Gro
 		groupAttachedPoliciesNextPage, err := groupAttachedPoliciesPage.NextPage(context.TODO())
 		if err != nil {
 			log.Println(err)
-			continue
+			g.RecordFailure("aws_iam_group_policy_attachment", err)
+			break
 		}
 		for _, attachedPolicy := range groupAttachedPoliciesNextPage.AttachedPolicies {
 			if !strings.Contains(*attachedPolicy.PolicyArn, "arn:aws:iam::aws") {

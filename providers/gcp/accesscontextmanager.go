@@ -110,6 +110,7 @@ func (g *AccessContextManagerGenerator) initResources(ctx context.Context, acmSe
 	ancestry, err := crmService.Projects.GetAncestry(project, &cloudresourcemanagerv1.GetAncestryRequest{}).Context(ctx).Do()
 	if err != nil {
 		log.Println(err)
+		g.RecordFailure("", err)
 		return
 	}
 	orgID := ""

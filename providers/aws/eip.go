@@ -35,6 +35,7 @@ func (g *ElasticIPGenerator) createElasticIpsResources(svc *ec2.Client) []terraf
 
 	if err != nil {
 		log.Println(err)
+		g.RecordFailure("aws_eip", err)
 		return resources
 	}
 

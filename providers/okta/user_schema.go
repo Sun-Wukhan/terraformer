@@ -68,7 +68,7 @@ func (g *UserSchemaPropertyGenerator) InitResources() error {
 		return e
 	}
 
-	userTypes, err := getUserTypes(ctx, client)
+	userTypes, err := getUserTypes(ctx, client, &g.Service)
 	if err != nil {
 		return err
 	}
@@ -94,7 +94,7 @@ func (g *UserSchemaPropertyGenerator) InitResources() error {
 	return nil
 }
 
-func getUserTypes(ctx context.Context, client *okta.Client) ([]*okta.UserType, error) {
+func getUserTypes(ctx context.Context, client *okta.Client, svc *terraformutils.Service) ([]*okta.UserType, error) {
 	output, resp, err := client.UserType.ListUserTypes(ctx)
 	if err != nil {
 		return nil, err
@@ -102,7 +102,11 @@ func getUserTypes(ctx context.Context, client *okta.Client) ([]*okta.UserType, e
 
 	for resp.HasNextPage() {
 		var nextUserTypeSet []*okta.UserType
-		resp, _ = resp.Next(ctx, &nextUserTypeSet)
+		resp, err = resp.Next(ctx, &nextUserTypeSet)
+		if err != nil {
+			svc.RecordFailure("okta_user_type", err)
+			break
+		}
 		output = append(output, nextUserTypeSet...)
 	}
 

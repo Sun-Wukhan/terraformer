@@ -49,7 +49,7 @@ func (g *AuthorizationServerPolicyGenerator) InitResources() error {
 		return e
 	}
 
-	authorizationServers, err := getAuthorizationServers(ctx, client)
+	authorizationServers, err := getAuthorizationServers(ctx, client, &g.Service)
 	if err != nil {
 		return err
 	}
