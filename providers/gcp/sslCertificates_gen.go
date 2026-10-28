@@ -33,14 +33,26 @@ type SslCertificatesGenerator struct {
 }
 
 // Run on sslCertificatesList and create for each TerraformResource
+//
+// Hand-corrected (Batch 5): the sslCertificates collection holds both
+// Google-managed and self-managed certificates, which are distinct
+// provider resources discriminated by the certificate's type field.
+// The generated version emitted every certificate as
+// google_compute_managed_ssl_certificate, which cannot represent a
+// self-managed certificate; emit each certificate under the resource
+// matching its type instead.
 func (g SslCertificatesGenerator) createResources(ctx context.Context, sslCertificatesList *compute.SslCertificatesListCall) []terraformutils.Resource {
 	resources := []terraformutils.Resource{}
 	if err := sslCertificatesList.Pages(ctx, func(page *compute.SslCertificateList) error {
 		for _, obj := range page.Items {
+			resourceType := "google_compute_managed_ssl_certificate"
+			if obj.Type == "SELF_MANAGED" {
+				resourceType = "google_compute_ssl_certificate"
+			}
 			resources = append(resources, terraformutils.NewResource(
 				obj.Name,
 				obj.Name,
-				"google_compute_managed_ssl_certificate",
+				resourceType,
 				g.ProviderName,
 				map[string]string{
 					"name":    obj.Name,
