@@ -107,6 +107,7 @@ func (g *GkeGenerator) InitResources() error {
 	}
 
 	g.Resources = g.initClusters(clusters)
+	g.initContainerDepth(ctx)
 	return nil
 }
 

@@ -100,6 +100,10 @@ func (g *DataprocGenerator) InitResources() error {
 	clusterList := dataprocService.Projects.Regions.Clusters.List(g.GetArgs()["project"].(string), g.GetArgs()["region"].(compute.Region).Name)
 	g.Resources = g.createClusterResources(ctx, clusterList)
 
+	// Depth collections (dataproc_depth.go): autoscaling policies,
+	// workflow templates, cluster IAM, batches, session templates.
+	g.initDepthResources(ctx, dataprocService)
+
 	// jobList := dataprocService.Projects.Regions.Jobs.List(g.GetArgs()["project"].(string), g.GetArgs()["region"])
 	// g.Resources = append(g.Resources, g.createJobResources(jobList, ctx)...)
 

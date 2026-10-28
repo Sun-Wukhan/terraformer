@@ -36,10 +36,17 @@ func (g *CloudSQLGenerator) loadDBInstances(svc *sqladmin.Service, project strin
 		return err
 	}
 	for _, dbInstance := range dbInstances.Items {
+		instanceType := "google_sql_database_instance"
+		if dbInstance.OnPremisesConfiguration != nil {
+			// External source representation instances are returned
+			// by instances.list too; they belong to the dedicated
+			// provider resource (see cloudsql_depth.go).
+			instanceType = "google_sql_source_representation_instance"
+		}
 		g.Resources = append(g.Resources, terraformutils.NewResource(
 			dbInstance.Name,
 			dbInstance.Name,
-			"google_sql_database_instance",
+			instanceType,
 			g.ProviderName,
 			map[string]string{
 				"project": project,
@@ -48,6 +55,9 @@ func (g *CloudSQLGenerator) loadDBInstances(svc *sqladmin.Service, project strin
 			cloudSQLAllowEmptyValues,
 			cloudSQLAdditionalFields,
 		))
+		if dbInstance.OnPremisesConfiguration != nil {
+			continue
+		}
 		err := g.loadDBs(svc, dbInstance.Name, project)
 		if err != nil {
 			return err
@@ -94,6 +104,8 @@ func (g *CloudSQLGenerator) InitResources() error {
 	if err := g.loadDBInstances(svc, project); err != nil {
 		return err
 	}
+	// Depth collections (cloudsql_depth.go): users and SSL certs.
+	g.loadDepth(svc, project)
 
 	return nil
 }

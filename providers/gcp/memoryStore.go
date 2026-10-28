@@ -74,5 +74,14 @@ func (g *MemoryStoreGenerator) InitResources() error {
 	redisInstancesList := redisService.Projects.Locations.Instances.List("projects/" + g.GetArgs()["project"].(string) + "/locations/" + g.GetArgs()["region"].(compute.Region).Name)
 
 	g.Resources = g.createResources(ctx, redisInstancesList)
+
+	// Depth collections (memoryStore_depth.go): Redis clusters and
+	// cluster ACL policies.
+	restClient, err := newAuthenticatedHTTPClient(ctx)
+	if err != nil {
+		log.Println(err)
+		restClient = nil
+	}
+	g.initDepthResources(ctx, redisService, restClient)
 	return nil
 }

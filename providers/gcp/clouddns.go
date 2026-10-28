@@ -101,6 +101,13 @@ func (g *CloudDNSGenerator) InitResources() error {
 	}
 
 	g.Resources = g.createZonesResources(ctx, svc, project)
+
+	restClient, err := newAuthenticatedHTTPClient(ctx)
+	if err != nil {
+		log.Println(err)
+		restClient = nil
+	}
+	g.initDnsDepthResources(ctx, svc, restClient)
 	return nil
 }
 

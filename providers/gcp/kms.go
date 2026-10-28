@@ -20,6 +20,7 @@ import (
 	"strings"
 
 	"google.golang.org/api/cloudkms/v1"
+	"google.golang.org/api/cloudresourcemanager/v1"
 
 	"github.com/GoogleCloudPlatform/terraformer/terraformutils"
 )
@@ -97,6 +98,18 @@ func (g *KmsGenerator) InitResources() error {
 	keyRingList := kmsService.Projects.Locations.KeyRings.List("projects/" + g.GetArgs()["project"].(string) + "/locations/global")
 
 	g.Resources = g.createKmsRingResources(ctx, keyRingList, kmsService)
+
+	crmService, err := cloudresourcemanager.NewService(ctx)
+	if err != nil {
+		log.Println(err)
+		crmService = nil
+	}
+	restClient, err := newAuthenticatedHTTPClient(ctx)
+	if err != nil {
+		log.Println(err)
+		restClient = nil
+	}
+	g.initKmsDepthResources(ctx, kmsService, crmService, restClient)
 	return nil
 }
 

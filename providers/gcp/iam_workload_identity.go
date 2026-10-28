@@ -30,20 +30,13 @@ import (
 // OAuth clients with their credentials. Pools and OAuth clients live in
 // the "global" location.
 //
-// Deliberately not generated:
-//   - The iam/v2 policy family (google_iam_access_boundary_policy,
-//     google_iam_deny_policy, google_iam_folder_access_policy,
-//     google_iam_organization_access_policy,
-//     google_iam_project_access_policy,
-//     google_iam_folders_policy_binding,
-//     google_iam_organizations_policy_binding,
-//     google_iam_projects_policy_binding and
-//     google_iam_principal_access_boundary_policy): the iam/v2 client
-//     exposes get-only policy calls, there is no list/enumerate call.
-//   - The workforce pool family (google_iam_workforce_pool and its
-//     subject/provider/IAM variants): workforce pools are
-//     organization-scoped (parent locations/global of an organization)
-//     and are not discoverable from a project-scoped import.
+// Note: the iam/v2 deny policies, the iam/v3beta policy bindings and
+// principal access boundary policies, and the workforce pool family
+// are enumerated by the IamOrgGenerator (iam_org.go) and by
+// initWorkforceResources (iam_workforce.go) through organization
+// ancestry — the pinned iam/v2 client does expose ListPolicies and
+// workforce pools are listable under the organization, so the older
+// project-scope-only skip note for those families no longer applies.
 func (g *IamGenerator) initWorkloadIdentityResources(ctx context.Context, service *iam.Service) error {
 	project := g.GetArgs()["project"].(string)
 	parent := "projects/" + project + "/locations/global"
