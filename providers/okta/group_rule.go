@@ -50,7 +50,11 @@ func (g *GroupRuleGenerator) InitResources() error {
 
 	for resp.HasNextPage() {
 		var nextGroupRuleSet []*okta.GroupRule
-		resp, _ = resp.Next(ctx, &nextGroupRuleSet)
+		resp, err = resp.Next(ctx, &nextGroupRuleSet)
+		if err != nil {
+			g.RecordFailure("okta_group_rule", err)
+			break
+		}
 		output = append(output, nextGroupRuleSet...)
 	}
 

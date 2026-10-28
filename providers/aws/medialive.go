@@ -38,14 +38,17 @@ func (g *MediaLiveGenerator) InitResources() error {
 
 	if err := g.GetChannels(svc); err != nil {
 		log.Println(err)
+		g.RecordFailure("aws_medialive_channel", err)
 	}
 
 	if err := g.GetInputs(svc); err != nil {
 		log.Println(err)
+		g.RecordFailure("aws_medialive_input", err)
 	}
 
 	if err := g.GetInputSecurityGroups(svc); err != nil {
 		log.Println(err)
+		g.RecordFailure("aws_medialive_input_security_group", err)
 	}
 
 	return nil

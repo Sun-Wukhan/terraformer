@@ -51,12 +51,12 @@ func (g *MFAPolicyGenerator) InitResources() error {
 		return e
 	}
 
-	output, _ = getMFAPolicies(ctx, client)
+	output, _ = getMFAPolicies(ctx, client, &g.Service)
 	g.Resources = g.createResources(output)
 	return nil
 }
 
-func getMFAPolicies(ctx context.Context, client *okta.Client) ([]*okta.Policy, error) {
+func getMFAPolicies(ctx context.Context, client *okta.Client, svc *terraformutils.Service) ([]*okta.Policy, error) {
 	qp := query.NewQueryParams(query.WithType("MFA_ENROLL"))
 	var policies []*okta.Policy
 	data, resp, err := client.Policy.ListPolicies(ctx, qp)
@@ -66,7 +66,11 @@ func getMFAPolicies(ctx context.Context, client *okta.Client) ([]*okta.Policy, e
 
 	for resp.HasNextPage() {
 		var nextPolicies []*okta.Policy
-		resp, _ = resp.Next(ctx, &nextPolicies)
+		resp, err = resp.Next(ctx, &nextPolicies)
+		if err != nil {
+			svc.RecordFailure("okta_policy_mfa", err)
+			break
+		}
 		policies = append(policies, nextPolicies...)
 	}
 	for _, p := range data {

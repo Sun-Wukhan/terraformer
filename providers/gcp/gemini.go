@@ -76,6 +76,7 @@ func (g *GeminiGenerator) InitResources() error {
 	restClient, err := newAuthenticatedHTTPClient(ctx)
 	if err != nil {
 		log.Println(err)
+		g.RecordFailure("", err)
 		return nil
 	}
 	g.initResources(ctx, restClient)

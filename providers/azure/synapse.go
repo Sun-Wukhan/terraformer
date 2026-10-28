@@ -230,6 +230,8 @@ func (az *SynapseGenerator) InitResources() error {
 		for _, hub := range hubs {
 			az.appendtPrivateLinkHubs(&hub)
 		}
+	} else {
+		az.RecordFailure("azurerm_synapse_private_link_hub", err)
 	}
 	return nil
 }

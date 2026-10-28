@@ -160,6 +160,7 @@ func (g *APIGatewayGenerator) loadResources(svc *apigateway.Client, restAPIID *s
 			err := g.loadResourceMethods(svc, restAPIID, resource)
 			if err != nil {
 				log.Println(err)
+				g.RecordFailure("aws_api_gateway_method", err)
 			}
 		}
 	}

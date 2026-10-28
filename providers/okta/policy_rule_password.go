@@ -51,7 +51,7 @@ func (g *PasswordPolicyRuleGenerator) InitResources() error {
 		return e
 	}
 
-	passwordPolicies, err := getPasswordPolicies(ctx, client)
+	passwordPolicies, err := getPasswordPolicies(ctx, client, &g.Service)
 	if err != nil {
 		return err
 	}
@@ -82,7 +82,11 @@ func getPasswordPolicyRules(g *PasswordPolicyRuleGenerator, policyID string) ([]
 
 	for resp.HasNextPage() {
 		var nextPolicySet []sdk.PolicyRule
-		resp, _ = resp.Next(ctx, &nextPolicySet)
+		resp, err = resp.Next(ctx, &nextPolicySet)
+		if err != nil {
+			g.RecordFailure("okta_policy_rule_password", err)
+			break
+		}
 		output = append(output, nextPolicySet...)
 	}
 

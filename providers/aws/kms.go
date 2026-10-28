@@ -57,6 +57,7 @@ func (g *KmsGenerator) addKeys(client *kms.Client) error {
 			})
 			if err != nil {
 				log.Println(err)
+				g.RecordFailure("aws_kms_key", err)
 				continue
 			}
 			if keyDescription.KeyMetadata.KeyManager == types.KeyManagerTypeCustomer {

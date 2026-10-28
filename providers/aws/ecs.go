@@ -62,7 +62,8 @@ func (g *EcsGenerator) InitResources() error {
 				serviceNextPage, err := servicePage.NextPage(context.TODO())
 				if err != nil {
 					fmt.Println(err.Error())
-					continue
+					g.RecordFailure("aws_ecs_service", err)
+					break
 				}
 				for _, serviceArn := range serviceNextPage.ServiceArns {
 					arnParts := strings.Split(serviceArn, "/")

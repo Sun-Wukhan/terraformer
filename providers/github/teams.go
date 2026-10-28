@@ -96,6 +96,7 @@ func (g *TeamsGenerator) InitResources() error {
 		teams, resp, err := client.Teams.ListTeams(ctx, g.Args["owner"].(string), opt)
 		if err != nil {
 			log.Println(err)
+			g.RecordFailure("github_team", err)
 			return nil
 		}
 

@@ -51,7 +51,7 @@ func (g *MFAPolicyRuleGenerator) InitResources() error {
 		return e
 	}
 
-	mfaPolicies, err := getMFAPolicies(ctx, client)
+	mfaPolicies, err := getMFAPolicies(ctx, client, &g.Service)
 	if err != nil {
 		return err
 	}
@@ -82,7 +82,11 @@ func getMFAPolicyRules(g *MFAPolicyRuleGenerator, policyID string) ([]sdk.Policy
 
 	for resp.HasNextPage() {
 		var nextPolicySet []sdk.PolicyRule
-		resp, _ = resp.Next(ctx, &nextPolicySet)
+		resp, err = resp.Next(ctx, &nextPolicySet)
+		if err != nil {
+			g.RecordFailure("okta_policy_rule_mfa", err)
+			break
+		}
 		output = append(output, nextPolicySet...)
 	}
 

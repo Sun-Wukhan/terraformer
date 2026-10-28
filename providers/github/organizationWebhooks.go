@@ -43,6 +43,7 @@ func (g *OrganizationWebhooksGenerator) InitResources() error {
 		hooks, resp, err := client.Organizations.ListHooks(ctx, g.Args["owner"].(string), opt)
 		if err != nil {
 			log.Println(err)
+			g.RecordFailure("github_organization_webhook", err)
 			return nil
 		}
 

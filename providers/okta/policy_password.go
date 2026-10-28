@@ -51,12 +51,12 @@ func (g *PasswordPolicyGenerator) InitResources() error {
 		return e
 	}
 
-	output, _ = getPasswordPolicies(ctx, client)
+	output, _ = getPasswordPolicies(ctx, client, &g.Service)
 	g.Resources = g.createResources(output)
 	return nil
 }
 
-func getPasswordPolicies(ctx context.Context, client *okta.Client) ([]*okta.Policy, error) {
+func getPasswordPolicies(ctx context.Context, client *okta.Client, svc *terraformutils.Service) ([]*okta.Policy, error) {
 	qp := query.NewQueryParams(query.WithType("PASSWORD"))
 	var policies []*okta.Policy
 	data, resp, err := client.Policy.ListPolicies(ctx, qp)
@@ -66,7 +66,11 @@ func getPasswordPolicies(ctx context.Context, client *okta.Client) ([]*okta.Poli
 
 	for resp.HasNextPage() {
 		var nextPolicies []*okta.Policy
-		resp, _ = resp.Next(ctx, &nextPolicies)
+		resp, err = resp.Next(ctx, &nextPolicies)
+		if err != nil {
+			svc.RecordFailure("okta_policy_password", err)
+			break
+		}
 		policies = append(policies, nextPolicies...)
 	}
 	for _, p := range data {

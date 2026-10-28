@@ -50,7 +50,11 @@ func (g *TrustedOriginGenerator) InitResources() error {
 
 	for resp.HasNextPage() {
 		var nextTrustedOriginSet []*okta.TrustedOrigin
-		resp, _ = resp.Next(ctx, &nextTrustedOriginSet)
+		resp, err = resp.Next(ctx, &nextTrustedOriginSet)
+		if err != nil {
+			g.RecordFailure("okta_trusted_origin", err)
+			break
+		}
 		output = append(output, nextTrustedOriginSet...)
 	}
 

@@ -39,6 +39,7 @@ func (g *ACMGenerator) createCertificatesResources(svc *acm.Client) []terraformu
 		page, err := p.NextPage(context.TODO())
 		if err != nil {
 			log.Println(err)
+			g.RecordFailure("aws_acm_certificate", err)
 			return resources
 		}
 		for _, cert := range page.CertificateSummaryList {

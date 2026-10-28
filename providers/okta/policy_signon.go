@@ -49,12 +49,12 @@ func (g *SignOnPolicyGenerator) InitResources() error {
 		return e
 	}
 
-	output, _ = getSignOnPolicies(ctx, client)
+	output, _ = getSignOnPolicies(ctx, client, &g.Service)
 	g.Resources = g.createResources(output)
 	return nil
 }
 
-func getSignOnPolicies(ctx context.Context, client *okta.Client) ([]*okta.Policy, error) {
+func getSignOnPolicies(ctx context.Context, client *okta.Client, svc *terraformutils.Service) ([]*okta.Policy, error) {
 	qp := query.NewQueryParams(query.WithType("OKTA_SIGN_ON"))
 	var policies []*okta.Policy
 	data, resp, err := client.Policy.ListPolicies(ctx, qp)
@@ -64,7 +64,11 @@ func getSignOnPolicies(ctx context.Context, client *okta.Client) ([]*okta.Policy
 
 	for resp.HasNextPage() {
 		var nextPolicies []*okta.Policy
-		resp, _ = resp.Next(ctx, &nextPolicies)
+		resp, err = resp.Next(ctx, &nextPolicies)
+		if err != nil {
+			svc.RecordFailure("okta_policy_signon", err)
+			break
+		}
 		policies = append(policies, nextPolicies...)
 	}
 	for _, p := range data {

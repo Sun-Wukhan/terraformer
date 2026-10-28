@@ -66,7 +66,8 @@ func (g *SnsGenerator) InitResources() error {
 				topicSubsNextPage, err := topicSubsPage.NextPage(context.TODO())
 				if err != nil {
 					log.Println(err)
-					continue
+					g.RecordFailure("aws_sns_topic_subscription", err)
+					break
 				}
 				for _, subscription := range topicSubsNextPage.Subscriptions {
 					subscriptionArnParts := strings.Split(StringValue(subscription.SubscriptionArn), ":")
