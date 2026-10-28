@@ -42,11 +42,12 @@ type RouterSubresourcesGenerator struct {
 //   - google_compute_router_route_policy and
 //     google_compute_router_named_set: not exposed on the GA compute
 //     Router resource.
-//   - google_compute_ha_vpn_gateway: the GA compute API has no
-//     HA-vs-classic discriminator on VPN gateways; every gateway is
-//     already emitted as google_compute_vpn_gateway by the
-//     targetVpnGateways generator, so HA gateways are covered and
-//     re-emitting them here would double-generate.
+//
+// google_compute_ha_vpn_gateway is not a router sub-resource: HA
+// gateways live in the vpnGateways collection (distinct from the
+// targetVpnGateways behind google_compute_vpn_gateway) and are
+// enumerated by the computeDepth generator. An earlier version of
+// this comment incorrectly claimed they were already covered here.
 //   - google_compute_global_network_endpoint: endpoints are a per-group
 //     sub-collection whose members are identified by IP/port rather than
 //     by name; the enumerable parent (the global network endpoint group)

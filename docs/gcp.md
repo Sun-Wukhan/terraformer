@@ -134,6 +134,130 @@ List of supported GCP services:
     * `google_sql_database_instance`
 *   `chronicle`
     * (no resources — Google SecOps resources hang off a provisioned Chronicle instance, and the Chronicle API exposes no instance list (GetInstance only), so the family cannot be enumerated; see `providers/gcp/chronicle.go`)
+*   `computeDepth`
+    * `google_compute_cross_site_network`
+    * `google_compute_future_reservation`
+    * `google_compute_global_vm_extension_policy`
+    * `google_compute_ha_vpn_gateway`
+    * `google_compute_instant_snapshot`
+    * `google_compute_interconnect`
+    * `google_compute_interconnect_attachment_group`
+    * `google_compute_interconnect_group`
+    * `google_compute_network_attachment`
+    * `google_compute_network_edge_security_service`
+    * `google_compute_preview_feature`
+    * `google_compute_public_advertised_prefix`
+    * `google_compute_public_delegated_prefix`
+    * `google_compute_region_backend_bucket`
+    * `google_compute_region_commitment`
+    * `google_compute_region_composite_health_check`
+    * `google_compute_region_health_aggregation_policy`
+    * `google_compute_region_health_source`
+    * `google_compute_region_instance_template`
+    * `google_compute_region_instant_snapshot`
+    * `google_compute_region_network_endpoint_group`
+    * `google_compute_region_ssl_policy`
+    * `google_compute_region_target_tcp_proxy`
+    * `google_compute_rollout_plan`
+    * `google_compute_service_attachment`
+    * `google_compute_storage_pool`
+    * `google_compute_target_grpc_proxy`
+    * `google_compute_wire_group`
+    * `google_compute_zone_vm_extension_policy`
+*   `computeIam`
+    * `google_compute_backend_bucket_iam_binding`
+    * `google_compute_backend_bucket_iam_member`
+    * `google_compute_backend_bucket_iam_policy`
+    * `google_compute_backend_service_iam_binding`
+    * `google_compute_backend_service_iam_member`
+    * `google_compute_backend_service_iam_policy`
+    * `google_compute_disk_iam_binding`
+    * `google_compute_disk_iam_member`
+    * `google_compute_disk_iam_policy`
+    * `google_compute_firewall_policy_iam_binding`
+    * `google_compute_firewall_policy_iam_member`
+    * `google_compute_firewall_policy_iam_policy`
+    * `google_compute_image_iam_binding`
+    * `google_compute_image_iam_member`
+    * `google_compute_image_iam_policy`
+    * `google_compute_instance_iam_binding`
+    * `google_compute_instance_iam_member`
+    * `google_compute_instance_iam_policy`
+    * `google_compute_instance_template_iam_binding`
+    * `google_compute_instance_template_iam_member`
+    * `google_compute_instance_template_iam_policy`
+    * `google_compute_instant_snapshot_iam_binding`
+    * `google_compute_instant_snapshot_iam_member`
+    * `google_compute_instant_snapshot_iam_policy`
+    * `google_compute_machine_image_iam_binding`
+    * `google_compute_machine_image_iam_member`
+    * `google_compute_machine_image_iam_policy`
+    * `google_compute_network_firewall_policy_iam_binding`
+    * `google_compute_network_firewall_policy_iam_member`
+    * `google_compute_network_firewall_policy_iam_policy`
+    * `google_compute_region_backend_bucket_iam_binding`
+    * `google_compute_region_backend_bucket_iam_member`
+    * `google_compute_region_backend_bucket_iam_policy`
+    * `google_compute_region_backend_service_iam_binding`
+    * `google_compute_region_backend_service_iam_member`
+    * `google_compute_region_backend_service_iam_policy`
+    * `google_compute_region_disk_iam_binding`
+    * `google_compute_region_disk_iam_member`
+    * `google_compute_region_disk_iam_policy`
+    * `google_compute_region_instant_snapshot_iam_binding`
+    * `google_compute_region_instant_snapshot_iam_member`
+    * `google_compute_region_instant_snapshot_iam_policy`
+    * `google_compute_region_network_firewall_policy_iam_binding`
+    * `google_compute_region_network_firewall_policy_iam_member`
+    * `google_compute_region_network_firewall_policy_iam_policy`
+    * `google_compute_snapshot_iam_binding`
+    * `google_compute_snapshot_iam_member`
+    * `google_compute_snapshot_iam_policy`
+    * `google_compute_storage_pool_iam_binding`
+    * `google_compute_storage_pool_iam_member`
+    * `google_compute_storage_pool_iam_policy`
+    * `google_compute_subnetwork_iam_binding`
+    * `google_compute_subnetwork_iam_member`
+    * `google_compute_subnetwork_iam_policy`
+*   `computePolicies`
+    * `google_compute_firewall_policy`
+    * `google_compute_firewall_policy_association`
+    * `google_compute_firewall_policy_rule`
+    * `google_compute_network_firewall_policy`
+    * `google_compute_network_firewall_policy_association`
+    * `google_compute_network_firewall_policy_packet_mirroring_rule`
+    * `google_compute_network_firewall_policy_rule`
+    * `google_compute_organization_security_policy`
+    * `google_compute_organization_security_policy_association`
+    * `google_compute_organization_security_policy_rule`
+    * `google_compute_region_network_firewall_policy`
+    * `google_compute_region_network_firewall_policy_association`
+    * `google_compute_region_network_firewall_policy_rule`
+    * `google_compute_region_network_policy`
+    * `google_compute_region_network_policy_traffic_classification_rule`
+    * `google_compute_region_security_policy`
+    * `google_compute_region_security_policy_rule`
+    * `google_compute_security_policy_rule`
+*   `computeSubresources`
+    * `google_compute_disk_resource_policy_attachment`
+    * `google_compute_instance_group_membership`
+    * `google_compute_instance_group_named_port`
+    * `google_compute_instance_settings`
+    * `google_compute_network_peering`
+    * `google_compute_organization_snapshot_recycle_bin_policy`
+    * `google_compute_per_instance_config`
+    * `google_compute_project_cloud_armor_tier`
+    * `google_compute_project_default_network_tier`
+    * `google_compute_project_metadata`
+    * `google_compute_region_disk_resource_policy_attachment`
+    * `google_compute_region_per_instance_config`
+    * `google_compute_region_resize_request`
+    * `google_compute_resize_request`
+    * `google_compute_resource_policy_attachment`
+    * `google_compute_shared_vpc_host_project`
+    * `google_compute_shared_vpc_service_project`
+    * `google_compute_snapshot_recycle_bin_policy`
+    * `google_compute_snapshot_settings`
 *   `dataplex`
     * `google_dataplex_aspect_type`
     * `google_dataplex_aspect_type_iam_binding`
@@ -492,6 +616,7 @@ List of supported GCP services:
     * `google_compute_snapshot`
 *   `sslCertificates`
     * `google_compute_managed_ssl_certificate`
+    * `google_compute_ssl_certificate`
 *   `sslPolicies`
     * `google_compute_ssl_policy`
 *   `subnetworks`
