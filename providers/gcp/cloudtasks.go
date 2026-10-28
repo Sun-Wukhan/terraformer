@@ -3,12 +3,14 @@ package gcp
 import (
 	"context"
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/GoogleCloudPlatform/terraformer/terraformutils"
 	"google.golang.org/api/iterator"
 
 	cloudtasks "cloud.google.com/go/cloudtasks/apiv2"
+	cloudtasksv2 "google.golang.org/api/cloudtasks/v2"
 	"google.golang.org/api/compute/v1"
 	taskspb "google.golang.org/genproto/googleapis/cloud/tasks/v2"
 )
@@ -70,6 +72,16 @@ func (g *CloudTaskGenerator) InitResources() error {
 
 	if err := g.loadCloudTaskQueues(ctx, client); err != nil {
 		return err
+	}
+
+	// Queue IAM depth (cloudtasks_iam.go); a REST client failure only
+	// disables the IAM pass.
+	if restService, err := cloudtasksv2.NewService(ctx); err == nil {
+		if err := g.loadCloudTaskQueueIam(ctx, restService); err != nil {
+			log.Println(err)
+		}
+	} else {
+		log.Println(err)
 	}
 
 	return client.Close()

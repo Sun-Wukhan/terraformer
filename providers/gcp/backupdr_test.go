@@ -1,0 +1,51 @@
+// Copyright 2026 The Terraformer Authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package gcp
+
+import (
+	"context"
+	"testing"
+
+	backupdr "google.golang.org/api/backupdr/v1"
+	"google.golang.org/api/compute/v1"
+	"google.golang.org/api/option"
+)
+
+func TestBackupDrGeneratorEnumeration(t *testing.T) {
+	ctx := context.Background()
+	parent := "projects/test-project/locations/us-central1"
+	transport := &cannedTransport{routes: []cannedRoute{
+		{substr: "/backupVaults", body: `{"backupVaults":[{"name":"` + parent + `/backupVaults/vault1"}]}`},
+		{substr: "/backupPlanAssociations", body: `{"backupPlanAssociations":[{"name":"` + parent + `/backupPlanAssociations/assoc1"}]}`},
+		{substr: "/backupPlans", body: `{"backupPlans":[{"name":"` + parent + `/backupPlans/plan1"}]}`},
+		{substr: "/managementServers", body: `{"managementServers":[{"name":"` + parent + `/managementServers/ms1"}]}`},
+	}}
+	svc, err := backupdr.NewService(ctx, option.WithHTTPClient(transport.client()), option.WithoutAuthentication())
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
+	g := &BackupDrGenerator{}
+	g.ProviderName = "google"
+	g.SetArgs(map[string]interface{}{"project": "test-project", "region": compute.Region{Name: "us-central1"}})
+	if err := g.initResources(ctx, svc); err != nil {
+		t.Fatalf("initResources: %v", err)
+	}
+	assertResourceIDs(t, g.Resources, map[string][]string{
+		"google_backup_dr_backup_vault":            {parent + "/backupVaults/vault1"},
+		"google_backup_dr_backup_plan":             {parent + "/backupPlans/plan1"},
+		"google_backup_dr_backup_plan_association": {parent + "/backupPlanAssociations/assoc1"},
+		"google_backup_dr_management_server":       {parent + "/managementServers/ms1"},
+	})
+}

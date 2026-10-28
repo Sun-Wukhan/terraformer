@@ -147,5 +147,5 @@ func (g *IamGenerator) InitResources() error {
 	if err := g.initWorkloadIdentityResources(ctx, iamService); err != nil {
 		return err
 	}
-	return nil
+	return g.initWorkforceResources(ctx, iamService, cm)
 }

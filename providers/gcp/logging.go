@@ -20,6 +20,7 @@ import (
 	"strings"
 
 	"github.com/GoogleCloudPlatform/terraformer/terraformutils"
+	"google.golang.org/api/cloudresourcemanager/v1"
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/logging/v2"
 
@@ -79,7 +80,18 @@ func (g *LoggingGenerator) InitResources() error {
 	if err != nil {
 		return err
 	}
-	return g.initResources(ctx, service)
+	if err := g.initResources(ctx, service); err != nil {
+		return err
+	}
+	// Folder/organization depth (logging_depth.go); a CRM failure only
+	// disables the depth pass, never the project enumeration.
+	crmService, err := cloudresourcemanager.NewService(ctx)
+	if err != nil {
+		log.Println(err)
+		return nil
+	}
+	g.initLoggingDepth(ctx, service, crmService)
+	return nil
 }
 
 // initResources enumerates the project-scoped Cloud Logging configuration
@@ -87,13 +99,12 @@ func (g *LoggingGenerator) InitResources() error {
 // their linked datasets and views (including view IAM), log scopes and
 // saved queries.
 //
-// Deliberately not generated: the billing-account, folder and organization
-// variants (google_logging_billing_account_sink/_exclusion/_bucket_config,
-// google_logging_folder_sink/_exclusion/_bucket_config/_settings and
-// google_logging_organization_sink/_exclusion/_bucket_config/_settings).
-// This generator is only ever invoked with a project (and region) in scope;
-// it never enumerates folder, organization or billing-account parents, so
-// there is no discovery path to those resources from a project import.
+// Deliberately not generated: the billing-account variants
+// (google_logging_billing_account_sink/_exclusion/_bucket_config).
+// A project's Cloud Resource Manager ancestry contains its folders and
+// organization (enumerated by the depth pass in logging_depth.go) but
+// never its billing account, so there is no discovery path to
+// billing-account parents from a project import.
 func (g *LoggingGenerator) initResources(ctx context.Context, service *logging.Service) error {
 	project := g.GetArgs()["project"].(string)
 	projectParent := "projects/" + project

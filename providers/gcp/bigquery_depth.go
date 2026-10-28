@@ -65,8 +65,8 @@ import (
 //     the two provider resources are alternate creation paths for one
 //     subscription and are indistinguishable when enumerated.
 //     Subscriptions are emitted once, as data exchange subscriptions.
-//   - google_bigquery_datapolicyv2_data_policy and its IAM variant:
-//     the v2 provider resources address the same data policy objects
+//   - google_bigquery_datapolicyv2_data_policy and
+//     google_bigquery_datapolicyv2_data_policy_iam: the v2 provider resources address the same data policy objects
 //     (same resource names and IDs) as the v1
 //     google_bigquery_datapolicy_data_policy resources emitted here,
 //     through the v2 API surface; emitting both would double-manage

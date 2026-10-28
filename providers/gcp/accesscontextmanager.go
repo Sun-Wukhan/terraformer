@@ -47,9 +47,13 @@ import (
 //     a condition has no ID of its own (its ID is the parent access
 //     level's name) — it is embedded in the access level.
 //   - google_access_context_manager_service_perimeter_egress_policy,
-//     _ingress_policy, _resource and the dry-run variants
-//     (_dry_run_egress_policy, _dry_run_ingress_policy,
-//     _dry_run_resource), plus the audit's short forms
+//     google_access_context_manager_service_perimeter_ingress_policy,
+//     google_access_context_manager_service_perimeter_resource and
+//     the dry-run variants
+//     google_access_context_manager_service_perimeter_dry_run_egress_policy,
+//     google_access_context_manager_service_perimeter_dry_run_ingress_policy,
+//     google_access_context_manager_service_perimeter_dry_run_resource,
+//     plus the audit's short forms
 //     google_access_context_manager_egress_policy and
 //     google_access_context_manager_ingress_policy: all are embedded
 //     in the perimeter's spec/status/dryRunSpec with the perimeter's

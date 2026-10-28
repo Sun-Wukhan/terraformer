@@ -60,8 +60,16 @@ type NetworkServicesGenerator struct {
 //   - google_network_services_cdn_edge_extension: no CDN edge extension
 //     service exists in either client (only lb_edge_extension, in
 //     v1beta1).
-//   - The nine google_network_services_multicast_* types: no multicast
-//     services exist in either client.
+//   - The nine multicast types google_network_services_multicast_domain,
+//     google_network_services_multicast_domain_group,
+//     google_network_services_multicast_domain_activation,
+//     google_network_services_multicast_group_range,
+//     google_network_services_multicast_group_range_activation,
+//     google_network_services_multicast_group_consumer_activation,
+//     google_network_services_multicast_group_producer_activation,
+//     google_network_services_multicast_consumer_association and
+//     google_network_services_multicast_producer_association: no
+//     multicast services exist in either client.
 func (g *NetworkServicesGenerator) InitResources() error {
 	ctx := context.Background()
 	v1Service, err := netsvcv1.NewService(ctx)
