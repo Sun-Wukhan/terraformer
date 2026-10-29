@@ -51,5 +51,6 @@ func (g *ResourceGroupsGenerator) InitResources() error {
 		}
 	}
 	g.Resources = resources
+	g.loadGroupResources(svc)
 	return nil
 }

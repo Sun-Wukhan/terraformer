@@ -53,7 +53,7 @@ func (g *EsGenerator) InitResources() error {
 		))
 	}
 
-	return nil
+	return g.loadExtended(svc)
 }
 
 func (g *EsGenerator) PostConvertHook() error {

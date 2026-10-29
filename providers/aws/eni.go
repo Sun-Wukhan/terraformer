@@ -58,6 +58,7 @@ func (g *EniGenerator) InitResources() error {
 		}
 		g.Resources = append(g.Resources, g.createResources(page)...)
 	}
+	g.getEniDepth(svc)
 	return nil
 }
 

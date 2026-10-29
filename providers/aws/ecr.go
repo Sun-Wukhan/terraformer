@@ -78,6 +78,7 @@ func (g *EcrGenerator) InitResources() error {
 			}
 		}
 	}
+	g.loadTailResources(svc)
 	return nil
 }
 

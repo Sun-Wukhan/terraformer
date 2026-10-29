@@ -76,7 +76,7 @@ func (g *EksGenerator) InitResources() error {
 			))
 		}
 	}
-	return nil
+	return g.loadSweep(svc)
 }
 
 func (g *EksGenerator) PostConvertHook() error {

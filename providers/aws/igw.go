@@ -62,5 +62,6 @@ func (g *IgwGenerator) InitResources() error {
 		}
 		g.Resources = append(g.Resources, g.createResources(page)...)
 	}
-	return nil
+	g.getIgwDepth(svc)
+	return g.addDepthResources(svc)
 }

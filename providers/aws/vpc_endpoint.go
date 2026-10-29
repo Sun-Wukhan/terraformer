@@ -56,5 +56,6 @@ func (g *VpcEndpointGenerator) InitResources() error {
 		return err
 	}
 	g.Resources = g.createResources(vpceps)
+	g.getVpcEndpointDepth(svc)
 	return nil
 }

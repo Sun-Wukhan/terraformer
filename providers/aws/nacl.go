@@ -63,5 +63,6 @@ func (g *NaclGenerator) InitResources() error {
 		}
 		g.Resources = append(g.Resources, g.createResources(page)...)
 	}
+	g.getNaclDepth(svc)
 	return nil
 }

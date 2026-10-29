@@ -59,5 +59,6 @@ func (g *VpcPeeringConnectionGenerator) InitResources() error {
 		}
 		g.Resources = append(g.Resources, g.createResources(page)...)
 	}
+	g.getVpcPeeringDepth(svc, config)
 	return nil
 }

@@ -54,5 +54,6 @@ func (g *EcrPublicGenerator) InitResources() error {
 			g.Resources = append(g.Resources, resource)
 		}
 	}
+	g.loadRepositoryPolicies(svc)
 	return nil
 }

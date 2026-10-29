@@ -35,6 +35,7 @@ func (g *QLDBGenerator) InitResources() error {
 	svc := qldb.NewFromConfig(config)
 	p := qldb.NewListLedgersPaginator(svc, &qldb.ListLedgersInput{})
 	var resources []terraformutils.Resource
+	var ledgerNames []string
 	for p.HasMorePages() {
 		page, err := p.NextPage(context.TODO())
 		if err != nil {
@@ -42,6 +43,7 @@ func (g *QLDBGenerator) InitResources() error {
 		}
 		for _, ledger := range page.Ledgers {
 			ledgerName := StringValue(ledger.Name)
+			ledgerNames = append(ledgerNames, ledgerName)
 			resources = append(resources, terraformutils.NewSimpleResource(
 				ledgerName,
 				ledgerName,
@@ -51,5 +53,5 @@ func (g *QLDBGenerator) InitResources() error {
 		}
 	}
 	g.Resources = resources
-	return nil
+	return g.loadQLDBStreams(svc, ledgerNames)
 }

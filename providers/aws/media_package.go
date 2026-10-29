@@ -51,5 +51,5 @@ func (g *MediaPackageGenerator) InitResources() error {
 		}
 	}
 	g.Resources = resources
-	return nil
+	return g.loadChannelGroups(config)
 }

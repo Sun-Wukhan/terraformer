@@ -52,5 +52,6 @@ func (g *DataPipelineGenerator) InitResources() error {
 		}
 	}
 	g.Resources = resources
+	g.loadPipelineDefinitions(svc)
 	return nil
 }

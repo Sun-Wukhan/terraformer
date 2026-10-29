@@ -38,6 +38,9 @@ func (g *APIGatewayV2Generator) InitResources() error {
 	if err := g.loadVpcLinks(svc); err != nil {
 		return err
 	}
+	if err := g.loadGatewayV2Depth(); err != nil {
+		return err
+	}
 	return nil
 }
 

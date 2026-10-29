@@ -54,5 +54,9 @@ func (g *SfnGenerator) InitResources() error {
 		}
 	}
 
+	if err := g.loadSfnAliases(svc); err != nil {
+		return err
+	}
+
 	return nil
 }

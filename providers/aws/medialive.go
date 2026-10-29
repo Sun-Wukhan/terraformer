@@ -51,6 +51,10 @@ func (g *MediaLiveGenerator) InitResources() error {
 		g.RecordFailure("aws_medialive_input_security_group", err)
 	}
 
+	if err := g.loadMultiplexes(svc); err != nil {
+		log.Println(err)
+	}
+
 	return nil
 }
 

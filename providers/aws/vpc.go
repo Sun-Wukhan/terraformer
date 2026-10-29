@@ -59,5 +59,7 @@ func (g *VpcGenerator) InitResources() error {
 		}
 		g.Resources = append(g.Resources, g.createResources(page)...)
 	}
+	g.getVpcDepth(svc, config)
+	g.loadFlowLogs(svc)
 	return nil
 }

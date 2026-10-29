@@ -67,5 +67,5 @@ func (g *KinesisGenerator) InitResources() error {
 			}
 		}
 	}
-	return nil
+	return g.loadExtended(config)
 }

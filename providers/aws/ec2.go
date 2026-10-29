@@ -86,6 +86,7 @@ func (g *Ec2Generator) InitResources() error {
 			}
 		}
 	}
+	g.getEc2Depth(svc)
 	return nil
 }
 

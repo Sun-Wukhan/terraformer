@@ -38,6 +38,11 @@ type BedrockAgentCoreGenerator struct {
 // Deliberately not generated: aws_bedrockagentcore_resource_policy. The
 // control plane only exposes GetResourcePolicy for a resource ARN you
 // already know; there is no list API to discover policies from.
+//
+// Also not generated (AWS sweep, data-ai cluster): aws_agentregistry_registry.
+// The standalone agentregistry SDK is a data-plane discovery client — its
+// only operations are List/Search/BatchGet of discoverable registry
+// records; it has no list or describe API for registries themselves.
 func (g *BedrockAgentCoreGenerator) InitResources() error {
 	config, e := g.generateConfig()
 	if e != nil {

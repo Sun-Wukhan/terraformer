@@ -39,6 +39,9 @@ func (g *WorkspacesGenerator) InitResources() error {
 	if err := g.loadWorkspacesIPGroup(svc); err != nil {
 		return err
 	}
+	if err := g.loadSweep(svc); err != nil {
+		return err
+	}
 	return nil
 }
 

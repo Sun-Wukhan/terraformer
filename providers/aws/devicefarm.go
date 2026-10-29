@@ -52,5 +52,6 @@ func (g *DeviceFarmGenerator) InitResources() error {
 		}
 	}
 	g.Resources = resources
+	g.loadTailResources(svc)
 	return nil
 }

@@ -86,6 +86,9 @@ func (g *SnsGenerator) InitResources() error {
 			}
 		}
 	}
+	if err := g.loadSnsDepth(svc); err != nil {
+		return err
+	}
 	return nil
 }
 

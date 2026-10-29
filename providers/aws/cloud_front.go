@@ -42,7 +42,7 @@ func (g *CloudFrontGenerator) InitResources() error {
 		return err
 	}
 
-	return nil
+	return g.addDepthResources(svc)
 }
 
 func (g *CloudFrontGenerator) loadDistribution(svc *cloudfront.Client) error {

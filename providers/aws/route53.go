@@ -146,7 +146,7 @@ func (g *Route53Generator) InitResources() error {
 	healthCheckResources := g.createHealthChecksResources(svc)
 	g.Resources = append(g.Resources, healthCheckResources...)
 
-	return nil
+	return g.addDepthResources(svc)
 }
 
 func (g *Route53Generator) PostConvertHook() error {

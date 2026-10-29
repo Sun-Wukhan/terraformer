@@ -167,5 +167,9 @@ func (g *GlueGenerator) InitResources() error {
 		return err
 	}
 
+	if err := g.loadGlueDepth(svc, account); err != nil {
+		return err
+	}
+
 	return nil
 }

@@ -59,5 +59,10 @@ func (g *MQGenerator) InitResources() error {
 		return err
 	}
 
+	err = g.loadConfigurations(svc)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }

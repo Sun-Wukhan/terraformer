@@ -59,5 +59,6 @@ func (g *NatGatewayGenerator) InitResources() error {
 		}
 		g.Resources = append(g.Resources, g.createResources(page)...)
 	}
+	g.getNatGatewayDepth(svc)
 	return nil
 }

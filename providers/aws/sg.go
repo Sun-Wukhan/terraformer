@@ -258,6 +258,7 @@ func (g *SecurityGenerator) InitResources() error {
 		return *resourcesToFilter[i].GroupId < *resourcesToFilter[j].GroupId
 	})
 	g.Resources = g.createResources(resourcesToFilter)
+	g.getSgDepth(svc)
 
 	return nil
 }

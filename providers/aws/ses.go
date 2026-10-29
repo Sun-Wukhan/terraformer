@@ -49,6 +49,9 @@ func (g *SesGenerator) InitResources() error {
 	if err := g.loadRuleSets(svc); err != nil {
 		return err
 	}
+	if err := g.loadSesDepth(svc); err != nil {
+		return err
+	}
 
 	return nil
 }

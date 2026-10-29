@@ -50,7 +50,7 @@ func (g *MskGenerator) InitResources() error {
 		}
 	}
 
-	return nil
+	return g.loadExtended(config)
 }
 
 func (g *MskGenerator) PostConvertHook() error {

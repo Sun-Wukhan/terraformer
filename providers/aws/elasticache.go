@@ -165,6 +165,9 @@ func (g *ElastiCacheGenerator) InitResources() error {
 	if err := g.loadSubnetGroups(svc); err != nil {
 		return err
 	}
+	if err := g.loadElastiCacheDepth(svc); err != nil {
+		return err
+	}
 
 	return nil
 }

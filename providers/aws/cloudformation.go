@@ -88,6 +88,7 @@ func (g *CloudFormationGenerator) InitResources() error {
 		}
 	}
 
+	g.loadTailResources(svc)
 	return nil
 }
 

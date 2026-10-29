@@ -50,6 +50,9 @@ func (g *APIGatewayGenerator) InitResources() error {
 	if err := g.loadAPIKeys(svc); err != nil {
 		return err
 	}
+	if err := g.loadGatewayDepth(svc); err != nil {
+		return err
+	}
 
 	return nil
 }

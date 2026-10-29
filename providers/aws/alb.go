@@ -212,6 +212,7 @@ func (g *AlbGenerator) InitResources() error {
 	if err := g.loadLBTargetGroup(svc); err != nil {
 		return err
 	}
+	g.getAlbDepth(svc)
 	return nil
 }
 

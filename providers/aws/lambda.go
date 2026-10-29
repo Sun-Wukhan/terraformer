@@ -57,7 +57,10 @@ func (g *LambdaGenerator) InitResources() error {
 		return err
 	}
 	err = g.addLayerVersions(svc)
-	return err
+	if err != nil {
+		return err
+	}
+	return g.loadSweep(svc)
 }
 
 func (g *LambdaGenerator) PostConvertHook() error {

@@ -51,5 +51,5 @@ func (g *CodeDeployGenerator) InitResources() error {
 		}
 	}
 	g.Resources = resources
-	return nil
+	return g.loadSweep(svc)
 }
