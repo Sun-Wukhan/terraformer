@@ -63,6 +63,11 @@ func (g *ACMGenerator) createCertificatesResources(svc *acm.Client) []terraformu
 
 // Generate TerraformResources from AWS API,
 // create terraform resource for each certificates
+//
+// aws_acm_certificate_validation is intentionally not generated: it
+// is a derived validation-wait helper over an aws_acm_certificate
+// (already generated above), with no independent ACM API object to
+// enumerate.
 func (g *ACMGenerator) InitResources() error {
 	config, e := g.generateConfig()
 	if e != nil {

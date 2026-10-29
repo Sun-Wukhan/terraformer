@@ -50,6 +50,11 @@ func (g *CloudWatchGenerator) InitResources() error {
 		return err
 	}
 
+	err = g.createSweepResources(cloudwatchSvc, cloudwatcheventsSvc)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 

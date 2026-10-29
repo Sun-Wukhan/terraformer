@@ -65,6 +65,10 @@ func (g *SqsGenerator) InitResources() error {
 		))
 	}
 
+	if err := g.loadQueuePolicies(svc); err != nil {
+		return err
+	}
+
 	return nil
 }
 

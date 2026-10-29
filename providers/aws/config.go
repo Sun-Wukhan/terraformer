@@ -43,7 +43,10 @@ func (g *ConfigGenerator) InitResources() error {
 		return err
 	}
 	err = g.addDeliveryChannels(client, configurationRecorderRefs)
-	return err
+	if err != nil {
+		return err
+	}
+	return g.createSweepResources(client)
 }
 
 func (g *ConfigGenerator) addConfigurationRecorders(svc *configservice.Client) ([]string, error) {

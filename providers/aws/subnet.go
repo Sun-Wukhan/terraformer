@@ -60,5 +60,6 @@ func (g *SubnetGenerator) InitResources() error {
 		}
 		g.Resources = append(g.Resources, g.createResources(page)...)
 	}
+	g.getSubnetDepth(svc)
 	return nil
 }

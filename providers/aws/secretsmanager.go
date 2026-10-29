@@ -52,5 +52,6 @@ func (g *SecretsManagerGenerator) InitResources() error {
 		}
 	}
 	g.Resources = resources
+	g.addDepthResources(svc)
 	return nil
 }

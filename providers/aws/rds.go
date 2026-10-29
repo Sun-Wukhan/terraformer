@@ -291,6 +291,10 @@ func (g *RDSGenerator) InitResources() error {
 		return err
 	}
 
+	if err := g.loadRDSDepth(svc); err != nil {
+		return err
+	}
+
 	return nil
 }
 

@@ -34,6 +34,9 @@ func (g *BatchGenerator) InitResources() error {
 	if err := g.loadJobQueues(batchClient); err != nil {
 		return err
 	}
+	if err := g.loadSweep(batchClient); err != nil {
+		return err
+	}
 
 	return nil
 }

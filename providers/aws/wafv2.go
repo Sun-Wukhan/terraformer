@@ -60,7 +60,7 @@ func (g *Wafv2Generator) InitResources() error {
 		return err
 	}
 
-	return nil
+	return g.addDepthResources(svc)
 }
 
 func (g *Wafv2Generator) loadWebACL(svc *wafv2.Client) error {

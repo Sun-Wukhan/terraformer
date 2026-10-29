@@ -80,6 +80,9 @@ func (g *CodePipelineGenerator) InitResources() error {
 	if err := g.loadWebhooks(svc); err != nil {
 		return err
 	}
+	if err := g.loadSweep(svc); err != nil {
+		return err
+	}
 
 	return nil
 }

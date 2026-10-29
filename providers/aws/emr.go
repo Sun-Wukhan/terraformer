@@ -39,7 +39,13 @@ func (g *EmrGenerator) InitResources() error {
 		return err
 	}
 	err = g.addSecurityConfigurations(client)
-	return err
+	if err != nil {
+		return err
+	}
+	if err := g.loadSweep(client); err != nil {
+		return err
+	}
+	return g.loadFamilySweep()
 }
 
 func (g *EmrGenerator) addClusters(client *emr.Client) error {

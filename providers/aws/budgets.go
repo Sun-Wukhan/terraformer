@@ -59,5 +59,6 @@ func (g *BudgetsGenerator) InitResources() error {
 	}
 
 	g.Resources = g.createResources(output.Budgets, account)
+	g.loadBudgetActions(budgetsSvc, account)
 	return nil
 }

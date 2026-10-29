@@ -53,5 +53,6 @@ func (g *Cloud9Generator) InitResources() error {
 			"aws",
 			cloud9AllowEmptyValues))
 	}
+	g.loadEnvironmentMemberships(svc)
 	return nil
 }

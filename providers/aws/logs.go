@@ -71,7 +71,7 @@ func (g *LogsGenerator) InitResources() error {
 		}
 		g.Resources = append(g.Resources, g.createResources(page)...)
 	}
-	return nil
+	return g.createSweepResources(svc)
 }
 
 // remove retention_in_days if it is 0 (it gets added by the "refresh" stage)

@@ -150,5 +150,6 @@ func (g *OrganizationGenerator) InitResources() error {
 		}
 	}
 
+	g.loadTailResources(svc)
 	return nil
 }

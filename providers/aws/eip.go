@@ -62,5 +62,6 @@ func (g *ElasticIPGenerator) InitResources() error {
 	svc := ec2.NewFromConfig(config)
 
 	g.Resources = g.createElasticIpsResources(svc)
+	g.getEipDepth(svc)
 	return nil
 }

@@ -51,5 +51,6 @@ func (g *AccessAnalyzerGenerator) InitResources() error {
 		}
 	}
 	g.Resources = resources
+	g.addArchiveRules(svc)
 	return nil
 }

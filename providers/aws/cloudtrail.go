@@ -53,5 +53,5 @@ func (g *CloudTrailGenerator) InitResources() error {
 		return err
 	}
 	g.Resources = g.createResources(output.TrailList)
-	return nil
+	return g.createSweepResources(svc, config)
 }

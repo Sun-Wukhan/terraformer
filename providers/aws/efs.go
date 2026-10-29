@@ -41,6 +41,10 @@ func (g *EfsGenerator) InitResources() error {
 	if err := g.loadAccessPoint(svc); err != nil {
 		return err
 	}
+	// AWS storage sweep: backup policies + replication (efs_sweep.go).
+	if err := g.loadSweepResources(svc); err != nil {
+		return err
+	}
 	return nil
 }
 

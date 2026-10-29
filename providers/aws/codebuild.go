@@ -48,7 +48,7 @@ func (g *CodeBuildGenerator) InitResources() error {
 				codebuildAllowEmptyValues))
 		}
 	}
-	return nil
+	return g.loadSweep(svc)
 }
 
 func (g *CodeBuildGenerator) PostConvertHook() error {

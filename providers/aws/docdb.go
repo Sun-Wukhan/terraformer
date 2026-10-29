@@ -51,6 +51,10 @@ func (g *DocDBGenerator) InitResources() error {
 		g.RecordFailure("aws_docdb_cluster_parameter_group", err)
 	}
 
+	if err := g.loadDocDBDepth(config); err != nil {
+		log.Println(err)
+	}
+
 	return nil
 }
 

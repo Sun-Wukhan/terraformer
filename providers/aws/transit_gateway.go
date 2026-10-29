@@ -121,5 +121,7 @@ func (g *TransitGatewayGenerator) InitResources() error {
 		g.RecordFailure("aws_ec2_transit_gateway_vpc_attachment", err)
 	}
 
+	g.getTransitGatewayDepth(svc)
+
 	return nil
 }

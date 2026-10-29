@@ -56,5 +56,6 @@ func (g *ElbGenerator) InitResources() error {
 			g.Resources = append(g.Resources, resource)
 		}
 	}
+	g.getElbDepth(svc)
 	return nil
 }

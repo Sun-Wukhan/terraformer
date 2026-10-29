@@ -41,7 +41,11 @@ func (g *KmsGenerator) InitResources() error {
 		return err
 	}
 	err = g.addAliases(client)
-	return err
+	if err != nil {
+		return err
+	}
+	g.addDepthResources(client)
+	return nil
 }
 
 func (g *KmsGenerator) addKeys(client *kms.Client) error {

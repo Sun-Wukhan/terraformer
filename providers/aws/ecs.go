@@ -139,6 +139,9 @@ func (g *EcsGenerator) InitResources() error {
 		g.Resources = append(g.Resources, v)
 	}
 
+	if err := g.loadSweep(svc); err != nil {
+		fmt.Println(err.Error())
+	}
 	return nil
 }
 

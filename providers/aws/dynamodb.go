@@ -49,7 +49,7 @@ func (g *DynamoDbGenerator) InitResources() error {
 			))
 		}
 	}
-	return nil
+	return g.loadDynamoDepth(svc)
 }
 
 func (g *DynamoDbGenerator) PostConvertHook() error {

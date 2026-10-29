@@ -51,5 +51,5 @@ func (g *MediaStoreGenerator) InitResources() error {
 		}
 	}
 	g.Resources = resources
-	return nil
+	return g.loadContainerPolicies(svc)
 }

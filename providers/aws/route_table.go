@@ -108,5 +108,6 @@ func (g *RouteTableGenerator) InitResources() error {
 	svc := ec2.NewFromConfig(config)
 
 	g.Resources = g.createRouteTablesResources(svc)
+	g.getRouteTableDepth(svc)
 	return nil
 }

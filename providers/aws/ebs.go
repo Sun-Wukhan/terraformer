@@ -109,5 +109,9 @@ func (g *EbsGenerator) InitResources() error {
 			}
 		}
 	}
+	// AWS storage sweep: snapshots + fast snapshot restores (ebs_sweep.go).
+	if err := g.loadSweepResources(config, svc); err != nil {
+		return err
+	}
 	return nil
 }

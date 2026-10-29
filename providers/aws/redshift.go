@@ -25,6 +25,12 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/redshift"
 )
 
+// Skipped in this family:
+//   - aws_redshiftdata_statement: transient Redshift Data API statement execution
+//     records. ListStatements returns short-lived query executions (ephemeral
+//     runtime state with limited retention), not managed infrastructure objects,
+//     so there is no durable inventory to import.
+
 var RedshiftAllowEmptyValues = []string{"tags."}
 
 type RedshiftGenerator struct {
@@ -174,6 +180,9 @@ func (g *RedshiftGenerator) InitResources() error {
 		return err
 	}
 	if err := g.loadSnapshotSchedules(svc); err != nil {
+		return err
+	}
+	if err := g.loadRedshiftDepth(svc, config); err != nil {
 		return err
 	}
 

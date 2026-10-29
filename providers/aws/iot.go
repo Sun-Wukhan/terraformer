@@ -46,6 +46,9 @@ func (g *IotGenerator) InitResources() error {
 	if err := g.loadRoleAliases(svc); err != nil {
 		return err
 	}
+	if err := g.loadExtended(svc, config.Region); err != nil {
+		return err
+	}
 
 	return nil
 }

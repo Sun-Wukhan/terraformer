@@ -78,6 +78,9 @@ func (g *S3Generator) createResources(config aws.Config, buckets *s3.ListBuckets
 				attributes,
 				S3AllowEmptyValues,
 				S3AdditionalFields))
+			// AWS storage sweep: per-bucket sub-configuration resources
+			// (see s3_subconfig.go).
+			resources = append(resources, g.bucketSubConfigs(svc, resourceName)...)
 		}
 	}
 	return resources

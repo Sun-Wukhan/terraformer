@@ -35,7 +35,6 @@ func (g *WafRegionalGenerator) InitResources() error {
 	if err := g.loadWebACL(svc); err != nil {
 		return err
 	}
-	// AWS WAF Regional API doesn't provide API to build aws_wafregional_web_acl_association resources
 	if err := g.loadByteMatchSet(svc); err != nil {
 		return err
 	}
@@ -70,7 +69,7 @@ func (g *WafRegionalGenerator) InitResources() error {
 		return err
 	}
 
-	return nil
+	return g.addDepthResources(svc)
 }
 
 func (g *WafRegionalGenerator) loadWebACL(svc *wafregional.Client) error {

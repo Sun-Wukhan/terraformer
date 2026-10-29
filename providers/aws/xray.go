@@ -39,5 +39,5 @@ func (g *XrayGenerator) InitResources() error {
 		}
 	}
 
-	return nil
+	return g.createSweepResources(svc)
 }

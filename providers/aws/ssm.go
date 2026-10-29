@@ -50,6 +50,6 @@ func (g *SsmGenerator) InitResources() error {
 			))
 		}
 	}
-
+	g.loadTailResources(svc)
 	return nil
 }

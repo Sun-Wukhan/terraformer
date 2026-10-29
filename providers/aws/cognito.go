@@ -120,6 +120,9 @@ func (g *CognitoGenerator) InitResources() error {
 	if err = g.loadUserPoolClients(svcCognitoIdentityProvider, userPoolIds); err != nil {
 		return err
 	}
+	if err = g.loadDepth(svcCognitoIdentityProvider, svcCognitoIdentity); err != nil {
+		return err
+	}
 
 	return nil
 }

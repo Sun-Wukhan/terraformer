@@ -44,5 +44,9 @@ func (g *AppSyncGenerator) InitResources() error {
 		}
 	}
 
+	if err := g.loadAppSyncDepth(svc); err != nil {
+		return err
+	}
+
 	return nil
 }

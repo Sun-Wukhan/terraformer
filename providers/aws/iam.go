@@ -71,6 +71,8 @@ func (g *IamGenerator) InitResources() error {
 		g.RecordFailure("aws_iam_instance_profile", err)
 	}
 
+	g.addDepthResources(svc)
+
 	return nil
 }
 

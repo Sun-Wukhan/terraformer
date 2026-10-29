@@ -52,7 +52,11 @@ func (g *SecurityhubGenerator) InitResources() error {
 		return err
 	}
 	err = g.addStandardsSubscription(client, *account)
-	return err
+	if err != nil {
+		return err
+	}
+	g.addDepthResources(client)
+	return nil
 }
 
 func (g *SecurityhubGenerator) addAccount(client *securityhub.Client, accountNumber string) (bool, error) {

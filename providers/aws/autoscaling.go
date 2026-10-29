@@ -127,6 +127,12 @@ func (g *AutoScalingGenerator) InitResources() error {
 	if err := g.loadLaunchTemplates(config); err != nil {
 		return err
 	}
+	if err := g.loadSweep(svc); err != nil {
+		return err
+	}
+	if err := g.loadPlansSweep(); err != nil {
+		return err
+	}
 	return nil
 }
 
