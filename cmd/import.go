@@ -190,10 +190,7 @@ func initAllServicesResources(providersMapping *terraformutils.ProvidersMapping,
 		if err != nil {
 			return err
 		}
-		// Let the service record enumeration failures that happen inside
-		// InitResources (previously only logged) into the run report.
-		serviceProvider.GetService().SetReport(report)
-		err = initServiceResources(service, serviceProvider, options, providerWrapper)
+		err = initServiceResources(service, serviceProvider, options, providerWrapper, report)
 		if err != nil {
 			failedServices = append(failedServices, service)
 			report.RecordFailure(terraformutils.ImportFailure{
@@ -233,13 +230,17 @@ func importFromPlan(providerMapping *terraformutils.ProvidersMapping, options Im
 }
 
 func initServiceResources(service string, provider terraformutils.ProviderGenerator,
-	options ImportOptions, providerWrapper *providerwrapper.ProviderWrapper) error {
+	options ImportOptions, providerWrapper *providerwrapper.ProviderWrapper, report *terraformutils.ImportReport) error {
 	log.Println(provider.GetName() + " importing... " + service)
 	err := provider.InitService(service, options.Verbose)
 	if err != nil {
 		log.Printf("%s error importing %s, err: %s\n", provider.GetName(), service, err)
 		return err
 	}
+	// Attach the run report only now: GetService() is nil until InitService
+	// succeeds. From here the service records enumeration failures that
+	// happen inside InitResources (previously only logged) into the report.
+	provider.GetService().SetReport(report)
 	provider.GetService().ParseFilters(options.Filter)
 	err = provider.GetService().InitResources()
 	if err != nil {
