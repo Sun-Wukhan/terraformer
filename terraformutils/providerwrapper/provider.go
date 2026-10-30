@@ -30,7 +30,8 @@ package providerwrapper //nolint
 //     schema_json.go into the 0.12 providers.GetSchemaResponse type that the
 //     rest of terraformer consumes.
 //   - Per-resource state refresh is done in bulk by the terraformutils package
-//     via generated `import` blocks + `<cli> apply` + `<cli> show -json`.
+//     via generated `import` blocks + `<cli> plan`, a verified import-only
+//     `<cli> apply` of the saved plan, and `<cli> show -json`.
 //
 // The github.com/hashicorp/terraform v0.12.31 module is therefore kept in
 // go.mod as a TYPES-ONLY dependency (configs/configschema, providers). None
@@ -47,6 +48,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -352,22 +354,40 @@ func (p *ProviderWrapper) writeProviderTF(config cty.Value) error {
 	f := hclwrite.NewEmptyFile()
 	body := f.Body()
 	providerBlock := body.AppendNewBlock("provider", []string{p.tfType})
-	pBody := providerBlock.Body()
-	wrote := false
-	for name, val := range config.AsValueMap() {
-		if val.IsNull() {
-			continue
-		}
-		pBody.SetAttributeValue(name, val)
-		wrote = true
-	}
-	if !wrote {
+	if !writeConfigBody(providerBlock.Body(), config) {
 		return nil
 	}
 	if err := os.WriteFile(filepath.Join(p.workDir, "provider.tf"), f.Bytes(), 0644); err != nil {
 		return fmt.Errorf("writing provider.tf: %w", err)
 	}
 	return nil
+}
+
+// writeConfigBody writes the non-null values of an object into body and
+// reports whether anything was written. Object-typed values become nested
+// blocks (e.g. azurerm's required `features {}`), everything else an
+// attribute; an empty object still yields an empty block.
+func writeConfigBody(body *hclwrite.Body, config cty.Value) bool {
+	values := config.AsValueMap()
+	names := make([]string, 0, len(values))
+	for name := range values {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	wrote := false
+	for _, name := range names {
+		val := values[name]
+		if val.IsNull() {
+			continue
+		}
+		if val.Type().IsObjectType() {
+			writeConfigBody(body.AppendNewBlock(name, nil).Body(), val)
+		} else {
+			body.SetAttributeValue(name, val)
+		}
+		wrote = true
+	}
+	return wrote
 }
 
 // warnIfOldCLI logs a warning when the resolved CLI is older than 1.5, the

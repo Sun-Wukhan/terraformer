@@ -27,6 +27,7 @@ import (
 	"github.com/hashicorp/go-azure-helpers/authentication"
 	"github.com/hashicorp/go-azure-helpers/sender"
 	"github.com/manicminer/hamilton/environments"
+	"github.com/zclconf/go-cty/cty"
 
 	"github.com/GoogleCloudPlatform/terraformer/terraformutils"
 	"github.com/GoogleCloudPlatform/terraformer/terraformutils/providerwrapper"
@@ -174,6 +175,19 @@ func (p *AzureProvider) getCredential() (azcore.TokenCredential, error) {
 		return nil, err
 	}
 	return cred, nil
+}
+
+// GetConfig returns the provider block used for the CLI refresh. azurerm
+// rejects any configuration without a `features {}` block, and v4+ also
+// requires an explicit subscription_id.
+func (p *AzureProvider) GetConfig() cty.Value {
+	config := map[string]cty.Value{
+		"features": cty.EmptyObjectVal,
+	}
+	if p.config.SubscriptionID != "" {
+		config["subscription_id"] = cty.StringVal(p.config.SubscriptionID)
+	}
+	return cty.ObjectVal(config)
 }
 
 func (p *AzureProvider) GetName() string {
