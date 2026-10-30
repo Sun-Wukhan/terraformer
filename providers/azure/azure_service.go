@@ -92,6 +92,7 @@ func (az *AzureService) InitialCleanup() {
 				continue
 			}
 		}
+		applyKeepZero(&r)
 		kept = append(kept, r)
 	}
 	az.Resources = kept

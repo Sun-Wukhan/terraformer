@@ -30,7 +30,6 @@ import (
 	"github.com/zclconf/go-cty/cty"
 
 	"github.com/GoogleCloudPlatform/terraformer/terraformutils"
-	"github.com/GoogleCloudPlatform/terraformer/terraformutils/providerwrapper"
 )
 
 type AzureProvider struct { //nolint
@@ -194,26 +193,14 @@ func (p *AzureProvider) GetName() string {
 	return "azurerm"
 }
 
+// GetProviderData returns the generated provider block. azurerm >= 2.0
+// requires a `features {}` block; the version constraint lives in
+// required_providers.
 func (p *AzureProvider) GetProviderData(arg ...string) map[string]interface{} {
-	version := providerwrapper.GetProviderVersion(p.GetName())
-	if strings.Contains(version, "v2.") {
-		return map[string]interface{}{
-			"provider": map[string]interface{}{
-				"azurerm": map[string]interface{}{
-					// NOTE:
-					// Workaround for azurerm v2 provider changes
-					// Tested with azurerm_resource_group under v2.17.0
-					// https://github.com/terraform-providers/terraform-provider-azurerm/issues/5866#issuecomment-594239342
-					// https://github.com/hashicorp/terraform/issues/24200#issuecomment-594745861
-					"features": map[string]interface{}{},
-				},
-			},
-		}
-	}
 	return map[string]interface{}{
 		"provider": map[string]interface{}{
 			"azurerm": map[string]interface{}{
-				"version": version,
+				"features": map[string]interface{}{},
 			},
 		},
 	}
