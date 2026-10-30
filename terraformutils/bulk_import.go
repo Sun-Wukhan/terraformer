@@ -26,16 +26,22 @@ import (
 
 	"github.com/GoogleCloudPlatform/terraformer/terraformutils/providerwrapper"
 
+	"github.com/hashicorp/terraform/providers"
 	"github.com/hashicorp/terraform/terraform"
 	ctyjson "github.com/zclconf/go-cty/cty/json"
 )
 
 // Timeouts for the bulk import CLI invocations.
 const (
+	bulkPlanTimeout     = 10 * time.Minute
 	bulkApplyTimeout    = 10 * time.Minute
 	bulkShowTimeout     = 2 * time.Minute
 	singleImportTimeout = 5 * time.Minute
 )
+
+// importPlanFile is the saved plan the bulk import applies, and only after
+// verifying it cannot change any remote object.
+const importPlanFile = "import.tfplan"
 
 // This file implements the bulk state-refresh that replaced the old
 // per-resource go-plugin gRPC Refresh. It lives in the terraformutils package
@@ -45,8 +51,10 @@ const (
 // Flow:
 //  1. Generate import.tf in the wrapper's isolated working directory: one
 //     `import` block plus an empty resource block per resource.
-//  2. `<cli> apply -auto-approve` imports everything in one run (with
-//     retries; partial failures are tolerated).
+//  2. `<cli> plan -out` plans the imports (with retries). The saved plan is
+//     applied only if `show -json` proves every change is a pure import with
+//     a no-op action: the generated resource blocks are empty, so any other
+//     action would rewrite the real object to match an empty config.
 //  3. `<cli> show -json` reads the resulting state; each state value is
 //     converted back into the 0.12 terraform.InstanceState model via the
 //     provider schema, exactly as the old code did.
@@ -120,6 +128,7 @@ func renderImportConfig(targets []importTarget) string {
 // skipped or dropped along the way is recorded in report (nil-safe), with
 // serviceOf attributing resources to their service for the report.
 func bulkImportResources(p *providerwrapper.ProviderWrapper, resources []*Resource, report *ImportReport, serviceOf map[*Resource]string) ([]*Resource, error) {
+	resources = dropUnknownTypes(resources, p.GetSchema(), report, serviceOf)
 	targets, addrToResource := assignImportTargets(resources)
 	if len(targets) == 0 {
 		return nil, nil
@@ -143,24 +152,10 @@ func bulkImportResources(p *providerwrapper.ProviderWrapper, resources []*Resour
 		return nil, fmt.Errorf("writing import.tf: %w", err)
 	}
 
-	var applyErr error
-	for i := 0; i <= p.GetRetryCount(); i++ {
-		if i > 0 {
-			log.Printf("WARN: bulk import apply failed, retry %d/%d after %dms", i, p.GetRetryCount(), p.GetRetrySleepMs())
-			time.Sleep(time.Duration(p.GetRetrySleepMs()) * time.Millisecond)
-		}
-		_, applyErr = p.RunCLI(bulkApplyTimeout, "apply", "-auto-approve", "-input=false", "-no-color")
-		if applyErr == nil {
-			break
-		}
-		log.Printf("WARN: bulk import apply attempt %d failed: %v", i+1, applyErr)
-	}
-	if applyErr != nil {
-		// Partial failure: whatever was imported before the error stays in
-		// state, so continue and collect it instead of failing hard.
-		log.Printf("ERROR: bulk import apply failed after retries, continuing with partial state: %v", applyErr)
-		report.RecordFailure(ImportFailure{Stage: StageRefresh,
-			Error: fmt.Sprintf("bulk import apply failed after retries, continued with partial state: %v", applyErr)})
+	if err := bulkApplyImportPlan(p); err != nil {
+		// Not fatal: every resource missing from state gets a single
+		// state-only `import` below.
+		log.Printf("WARN: bulk import skipped, falling back to single imports: %v", err)
 	}
 
 	refreshed := map[string]bool{}
@@ -205,6 +200,90 @@ func bulkImportResources(p *providerwrapper.ProviderWrapper, resources []*Resour
 		}
 	}
 	return out, nil
+}
+
+// dropUnknownTypes removes resources whose type the installed provider does
+// not define (e.g. azurerm_app_service, removed in azurerm v4). They all share
+// one import.tf, so a single unknown type would otherwise fail every import.
+func dropUnknownTypes(resources []*Resource, schema *providers.GetSchemaResponse, report *ImportReport, serviceOf map[*Resource]string) []*Resource {
+	if schema == nil {
+		return resources
+	}
+	kept := resources[:0:0]
+	for _, r := range resources {
+		if r != nil && r.InstanceInfo != nil {
+			if _, ok := schema.ResourceTypes[r.InstanceInfo.Type]; !ok {
+				report.RecordFailure(failureForResource(r, serviceOf[r], StageRefresh,
+					fmt.Errorf("resource type %q is not defined by the installed provider version", r.InstanceInfo.Type)))
+				continue
+			}
+		}
+		kept = append(kept, r)
+	}
+	return kept
+}
+
+// bulkApplyImportPlan plans the generated import config and applies the saved
+// plan only when it is provably import-only. Any error means nothing was
+// applied.
+func bulkApplyImportPlan(p *providerwrapper.ProviderWrapper) error {
+	var planErr error
+	for i := 0; i <= p.GetRetryCount(); i++ {
+		if i > 0 {
+			log.Printf("WARN: bulk import plan failed, retry %d/%d after %dms", i, p.GetRetryCount(), p.GetRetrySleepMs())
+			time.Sleep(time.Duration(p.GetRetrySleepMs()) * time.Millisecond)
+		}
+		_, planErr = p.RunCLI(bulkPlanTimeout, "plan", "-input=false", "-no-color", "-out="+importPlanFile)
+		if planErr == nil {
+			break
+		}
+	}
+	if planErr != nil {
+		return fmt.Errorf("plan failed: %w", planErr)
+	}
+	planJSON, err := p.RunCLI(bulkShowTimeout, "show", "-json", "-no-color", importPlanFile)
+	if err != nil {
+		return fmt.Errorf("reading plan: %w", err)
+	}
+	if err := verifyImportOnlyPlan(planJSON); err != nil {
+		return err
+	}
+	if _, err := p.RunCLI(bulkApplyTimeout, "apply", "-input=false", "-no-color", importPlanFile); err != nil {
+		return fmt.Errorf("applying import-only plan: %w", err)
+	}
+	return nil
+}
+
+type planResourceChange struct {
+	Address string `json:"address"`
+	Change  struct {
+		Actions   []string        `json:"actions"`
+		Importing json.RawMessage `json:"importing"`
+	} `json:"change"`
+}
+
+// verifyImportOnlyPlan returns an error unless every planned change in a
+// `show -json` plan document is an import whose only action is no-op, i.e.
+// applying the plan can write local state but never touch a remote object.
+func verifyImportOnlyPlan(planJSON []byte) error {
+	var doc struct {
+		ResourceChanges []planResourceChange `json:"resource_changes"`
+	}
+	if err := json.Unmarshal(planJSON, &doc); err != nil {
+		return fmt.Errorf("parsing plan: %w", err)
+	}
+	var unsafe []string
+	for _, rc := range doc.ResourceChanges {
+		noop := len(rc.Change.Actions) == 1 && rc.Change.Actions[0] == "no-op"
+		importing := len(rc.Change.Importing) > 0 && string(rc.Change.Importing) != "null"
+		if !noop || !importing {
+			unsafe = append(unsafe, fmt.Sprintf("%s %v", rc.Address, rc.Change.Actions))
+		}
+	}
+	if len(unsafe) > 0 {
+		return fmt.Errorf("refusing to apply: plan would modify %d remote object(s), e.g. %s", len(unsafe), unsafe[0])
+	}
+	return nil
 }
 
 // --- show -json handling ---
