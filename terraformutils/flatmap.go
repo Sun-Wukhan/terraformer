@@ -34,6 +34,11 @@ type FlatmapParser struct {
 	attributes       map[string]string
 	ignoreKeys       []*regexp.Regexp
 	allowEmptyValues []*regexp.Regexp
+	// dropZeroKeys match attributes (Optional+Computed in the schema) whose
+	// zero value (false, 0, "") is dropped: the provider keeps the live value
+	// when they are unset, while an explicit zero often conflicts with
+	// another attribute.
+	dropZeroKeys []*regexp.Regexp
 }
 
 func NewFlatmapParser(attributes map[string]string, ignoreKeys []*regexp.Regexp, allowEmptyValues []*regexp.Regexp) *FlatmapParser {
@@ -42,6 +47,13 @@ func NewFlatmapParser(attributes map[string]string, ignoreKeys []*regexp.Regexp,
 		ignoreKeys:       ignoreKeys,
 		allowEmptyValues: allowEmptyValues,
 	}
+}
+
+// WithDropZeroKeys sets the patterns of attributes whose zero values are
+// dropped (see dropZeroKeys) and returns the parser for chaining.
+func (p *FlatmapParser) WithDropZeroKeys(patterns []*regexp.Regexp) *FlatmapParser {
+	p.dropZeroKeys = patterns
+	return p
 }
 
 // FromFlatmap converts a map compatible with what would be produced
@@ -91,7 +103,20 @@ func (p *FlatmapParser) fromFlatmapPrimitive(key string) (interface{}, error) {
 	if !ok {
 		return nil, nil
 	}
-	return value, nil
+	return escapeTemplateSequences(value), nil
+}
+
+// escapeTemplateSequences escapes the `${` and `%{` sequences of a literal
+// state value so Terraform does not parse them as interpolation or template
+// directives (e.g. an API Management e-mail template containing
+// `${OrganizationName}`). Resource references that terraformer itself adds
+// later (connections) are not affected because they bypass this parser.
+func escapeTemplateSequences(value string) string {
+	if !strings.Contains(value, "${") && !strings.Contains(value, "%{") {
+		return value
+	}
+	value = strings.ReplaceAll(value, "${", "$${")
+	return strings.ReplaceAll(value, "%{", "%%{")
 }
 
 func (p *FlatmapParser) fromFlatmapObject(prefix string, tys map[string]cty.Type) (map[string]interface{}, error) {
@@ -144,14 +169,70 @@ func (p *FlatmapParser) fromFlatmapObject(prefix string, tys map[string]cty.Type
 		if err != nil {
 			return nil, err
 		}
-		if p.isValueAllowed(value, attributeName) {
-			values[name] = value
+		switch {
+		case isZeroNumber(value, ty):
+			// A numeric 0 is the SDK's "unset" marker (and often outside the
+			// attribute's valid range), so treat it like an empty value.
+			if !p.isEmptyAllowed(attributeName) {
+				continue
+			}
+		case isZeroPrimitive(value, ty) && p.isZeroDropped(attributeName):
+			continue
+		case !p.isValueAllowed(value, attributeName):
+			continue
 		}
+		values[name] = value
 	}
 	if len(values) == 0 {
 		return nil, nil
 	}
 	return values, nil
+}
+
+// isZeroPrimitive reports whether value is the flatmap encoding of a zero
+// primitive: "false" for cty.Bool, "" for cty.String or 0 for cty.Number.
+func isZeroPrimitive(value interface{}, ty cty.Type) bool {
+	s, ok := value.(string)
+	if !ok {
+		return false
+	}
+	switch ty {
+	case cty.Bool:
+		return s == "false"
+	case cty.String:
+		return s == ""
+	case cty.Number:
+		return isZeroNumber(value, ty)
+	}
+	return false
+}
+
+// isZeroDropped reports whether a zero value for key must be dropped: the key
+// matches dropZeroKeys and is not explicitly allowed to be empty (required).
+func (p *FlatmapParser) isZeroDropped(key string) bool {
+	if p.isEmptyAllowed(key) {
+		return false
+	}
+	for _, pattern := range p.dropZeroKeys {
+		if pattern.MatchString(key) {
+			return true
+		}
+	}
+	return false
+}
+
+// isZeroNumber reports whether value is the flatmap encoding of the number 0
+// for a cty.Number attribute.
+func isZeroNumber(value interface{}, ty cty.Type) bool {
+	if ty != cty.Number {
+		return false
+	}
+	s, ok := value.(string)
+	if !ok {
+		return false
+	}
+	f, err := strconv.ParseFloat(s, 64)
+	return err == nil && f == 0
 }
 
 func (p *FlatmapParser) fromFlatmapTuple(prefix string, tys []cty.Type) ([]interface{}, error) {
@@ -389,13 +470,16 @@ func (p *FlatmapParser) isValueAllowed(value interface{}, prefix string) bool {
 	if !reflect.ValueOf(value).IsZero() {
 		return true
 	}
+	return p.isEmptyAllowed(prefix)
+}
 
-	allowed := false
+// isEmptyAllowed reports whether an empty/zero value may be emitted for the
+// given flatmap key.
+func (p *FlatmapParser) isEmptyAllowed(key string) bool {
 	for _, pattern := range p.allowEmptyValues {
-		if pattern.MatchString(prefix) {
-			allowed = true
-			break
+		if pattern.MatchString(key) {
+			return true
 		}
 	}
-	return allowed
+	return false
 }

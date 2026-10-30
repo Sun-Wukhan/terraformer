@@ -37,6 +37,8 @@ func OutputHclFiles(resources []terraformutils.Resource, provider terraformutils
 
 	if providerWithSource, ok := provider.(terraformutils.ProviderWithSource); ok {
 		providerConfig["source"] = providerWithSource.GetSource()
+	} else if source := providerwrapper.GetProviderSource(provider.GetName()); source != "" {
+		providerConfig["source"] = source
 	}
 
 	// create provider file
@@ -78,9 +80,16 @@ func OutputHclFiles(resources []terraformutils.Resource, provider terraformutils
 		for _, v := range provider.GetResourceConnections() {
 			for k, ids := range v {
 				if (serviceName != "" && k == serviceName) || (serviceName == "" && k == r.ServiceName()) {
-					if _, exist := r.InstanceState.Attributes[ids[1]]; exist {
-						key := ids[1]
-						if ids[1] == "self_link" || ids[1] == "id" {
+					// ids is a flat list of (referencing attribute, referenced
+					// attribute) pairs; every referenced attribute needs an
+					// output, not just the first.
+					for i := 1; i < len(ids); i += 2 {
+						attr := ids[i]
+						if _, exist := r.InstanceState.Attributes[attr]; !exist {
+							continue
+						}
+						key := attr
+						if attr == "self_link" || attr == "id" {
 							key = r.GetIDKey()
 						}
 						linkKey := r.InstanceInfo.Type + "_" + r.ResourceName + "_" + key
@@ -89,7 +98,7 @@ func OutputHclFiles(resources []terraformutils.Resource, provider terraformutils
 						}
 						outputState[linkKey] = &terraform.OutputState{
 							Type:  "string",
-							Value: r.InstanceState.Attributes[ids[1]],
+							Value: r.InstanceState.Attributes[attr],
 						}
 					}
 				}
@@ -219,7 +228,15 @@ func printProviderTF(providerData map[string]interface{}) []byte {
 			b.WriteString("\n")
 			b.WriteString(fmt.Sprintf("provider %q {\n", name))
 			if cfg, ok := prov[name].(map[string]interface{}); ok {
-				writeHCLBlockBody(&b, cfg, 1)
+				// Version constraints belong in required_providers; inside a
+				// provider block they have been deprecated since 0.13.
+				body := make(map[string]interface{}, len(cfg))
+				for k, v := range cfg {
+					if k != "version" {
+						body[k] = v
+					}
+				}
+				writeHCLBlockBody(&b, body, 1)
 			}
 			b.WriteString("}\n")
 		}
