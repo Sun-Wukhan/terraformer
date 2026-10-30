@@ -33,6 +33,7 @@ func TestCanonicalAzureID(t *testing.T) {
 		{rg + "Microsoft.LoadTestService/loadtests/lt", rg + "Microsoft.LoadTestService/loadTests/lt"},
 		{"/subscriptions/s/resourcegroups/Devtest/providers/microsoft.insights/metricalerts/a", rg + "Microsoft.Insights/metricAlerts/a"},
 		{rg + "microsoft.insights/actiongroups/Smart Detection", rg + "Microsoft.Insights/actionGroups/Smart Detection"},
+		{rg + "microsoft.insights/webtests/ping", rg + "Microsoft.Insights/webTests/ping"},
 		// Segments are scoped per namespace: IoT Hub keeps `ConsumerGroups`.
 		{rg + "Microsoft.Devices/IotHubs/h/eventHubEndpoints/events/ConsumerGroups/g", rg + "Microsoft.Devices/IotHubs/h/eventHubEndpoints/events/ConsumerGroups/g"},
 		// Resource names are never rewritten, even when they look like keys.

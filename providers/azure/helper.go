@@ -122,7 +122,7 @@ var canonicalProviderNamespaces = map[string]string{
 // Event Hubs `consumerGroups`).
 var canonicalIDSegments = map[string][]string{
 	"microsoft.eventhub":        {"authorizationRules", "consumerGroups"},
-	"microsoft.insights":        {"actionGroups", "metricAlerts"},
+	"microsoft.insights":        {"actionGroups", "metricAlerts", "webTests"},
 	"microsoft.loadtestservice": {"loadTests"},
 	"microsoft.relay":           {"authorizationRules", "hybridConnections"},
 	"microsoft.servicebus":      {"authorizationRules"},
