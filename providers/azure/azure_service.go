@@ -78,6 +78,26 @@ func azureCloudConfig(resourceManagerEndpoint string) cloud.Configuration {
 	}
 }
 
+// InitialCleanup normalizes every resource ID to the casing azurerm's
+// importers accept and, when a resource group was requested, drops resources
+// that subscription-scoped List calls returned from other resource groups.
+// It then runs the generic filter cleanup.
+func (az *AzureService) InitialCleanup() {
+	resourceGroup, _ := az.Args["resource_group"].(string)
+	kept := az.Resources[:0]
+	for _, r := range az.Resources {
+		if r.InstanceState != nil {
+			r.InstanceState.ID = canonicalAzureID(r.InstanceState.ID)
+			if rg := resourceGroupOfID(r.InstanceState.ID); resourceGroup != "" && rg != "" && !strings.EqualFold(rg, resourceGroup) {
+				continue
+			}
+		}
+		kept = append(kept, r)
+	}
+	az.Resources = kept
+	az.Service.InitialCleanup()
+}
+
 func (az *AzureService) AppendSimpleResource(id string, resourceName string, resourceType string) {
 	newResource := terraformutils.NewSimpleResource(id, resourceName, resourceType, az.ProviderName, []string{})
 	az.Resources = append(az.Resources, newResource)
