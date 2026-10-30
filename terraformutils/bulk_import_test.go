@@ -95,14 +95,15 @@ func TestRenderImportConfig(t *testing.T) {
 	if !strings.Contains(got, `id = "we\"ird\\id"`) {
 		t.Fatalf("ID not properly quoted/escaped:\n%s", got)
 	}
-	// Every target gets an import block and a matching empty resource block.
+	// Every target gets an import block; resource blocks are left for
+	// Terraform's -generate-config-out, since empty ones fail validation.
 	for _, tg := range targets {
 		if !strings.Contains(got, "to = "+tg.address) {
 			t.Fatalf("missing import block for %s:\n%s", tg.address, got)
 		}
-		if !strings.Contains(got, `resource "`+tg.resource.InstanceInfo.Type+`" "`+tg.label+`"`) {
-			t.Fatalf("missing resource block for %s:\n%s", tg.address, got)
-		}
+	}
+	if strings.Contains(got, `resource "`) {
+		t.Fatalf("resource blocks must not be rendered (they would fail validation):\n%s", got)
 	}
 	// Duplicate names deduped with suffix.
 	if !strings.Contains(got, "_2") {

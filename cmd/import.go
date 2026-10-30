@@ -260,6 +260,10 @@ func ImportFromPlan(provider terraformutils.ProviderGenerator, plan *ImportPlan)
 	importedResource := plan.ImportedResource
 	isServicePath := strings.Contains(options.PathPattern, "{service}")
 
+	// Names must be unique before connections are built, since connections
+	// reference resources by name.
+	terraformutils.DedupeResourceNames(importedResource)
+
 	if options.Connect {
 		log.Println(provider.GetName() + " Connecting.... ")
 		importedResource = terraformutils.ConnectServices(importedResource, isServicePath, provider.GetResourceConnections())

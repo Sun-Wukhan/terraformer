@@ -43,6 +43,12 @@ const (
 // verifying it cannot change any remote object.
 const importPlanFile = "import.tfplan"
 
+// importGeneratedFile receives the resource configuration Terraform generates
+// for the import blocks (`plan -generate-config-out`). Empty resource blocks
+// would fail validation on every required argument, so the config has to come
+// from Terraform itself.
+const importGeneratedFile = "import_generated.tf"
+
 // This file implements the bulk state-refresh that replaced the old
 // per-resource go-plugin gRPC Refresh. It lives in the terraformutils package
 // (rather than as a ProviderWrapper method) because providerwrapper cannot
@@ -50,11 +56,11 @@ const importPlanFile = "import.tfplan"
 //
 // Flow:
 //  1. Generate import.tf in the wrapper's isolated working directory: one
-//     `import` block plus an empty resource block per resource.
+//     `import` block per resource. Terraform generates the matching resource
+//     blocks itself (`-generate-config-out`), so the config always validates.
 //  2. `<cli> plan -out` plans the imports (with retries). The saved plan is
 //     applied only if `show -json` proves every change is a pure import with
-//     a no-op action: the generated resource blocks are empty, so any other
-//     action would rewrite the real object to match an empty config.
+//     a no-op action: any other action would rewrite the real object.
 //  3. `<cli> show -json` reads the resulting state; each state value is
 //     converted back into the 0.12 terraform.InstanceState model via the
 //     provider schema, exactly as the old code did.
@@ -112,13 +118,13 @@ func assignImportTargets(resources []*Resource) ([]importTarget, map[string]*Res
 }
 
 // renderImportConfig renders the import.tf file content: one `import` block
-// plus an empty resource block per target. IDs are quoted with
-// strconv.Quote semantics so quotes and other special characters survive.
+// per target. Resource blocks are deliberately absent so Terraform generates
+// them during plan. IDs are quoted with strconv.Quote semantics so quotes and
+// other special characters survive.
 func renderImportConfig(targets []importTarget) string {
 	var sb strings.Builder
 	for _, t := range targets {
 		fmt.Fprintf(&sb, "import {\n  to = %s\n  id = %s\n}\n\n", t.address, strconv.Quote(t.resource.InstanceState.ID))
-		fmt.Fprintf(&sb, "resource %s %s {\n}\n\n", strconv.Quote(t.resource.InstanceInfo.Type), strconv.Quote(t.label))
 	}
 	return sb.String()
 }
@@ -228,12 +234,18 @@ func dropUnknownTypes(resources []*Resource, schema *providers.GetSchemaResponse
 // applied.
 func bulkApplyImportPlan(p *providerwrapper.ProviderWrapper) error {
 	var planErr error
+	generated := filepath.Join(p.WorkDir(), importGeneratedFile)
 	for i := 0; i <= p.GetRetryCount(); i++ {
 		if i > 0 {
 			log.Printf("WARN: bulk import plan failed, retry %d/%d after %dms", i, p.GetRetryCount(), p.GetRetrySleepMs())
 			time.Sleep(time.Duration(p.GetRetrySleepMs()) * time.Millisecond)
 		}
-		_, planErr = p.RunCLI(bulkPlanTimeout, "plan", "-input=false", "-no-color", "-out="+importPlanFile)
+		// Terraform refuses to overwrite an existing generated-config file.
+		if err := os.Remove(generated); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("removing stale %s: %w", importGeneratedFile, err)
+		}
+		_, planErr = p.RunCLI(bulkPlanTimeout, "plan", "-input=false", "-no-color",
+			"-generate-config-out="+importGeneratedFile, "-out="+importPlanFile)
 		if planErr == nil {
 			break
 		}
@@ -369,5 +381,7 @@ func assignRefreshedState(p *providerwrapper.ProviderWrapper, r *Resource, value
 		state.ID = r.InstanceState.ID
 	}
 	r.InstanceState = state
+	// Keep the typed attributes for the generated state file.
+	r.StateJSON = append(json.RawMessage(nil), values...)
 	return nil
 }
