@@ -91,7 +91,11 @@ func main() {
 				}
 
 				// build....
-				cmd := exec.Command("go", "build", "-v", "-o", binaryName)
+				buildArgs := []string{"build", "-v", "-o", binaryName}
+				if v := os.Getenv("VERSION"); v != "" {
+					buildArgs = append(buildArgs, "-ldflags", "-X github.com/GoogleCloudPlatform/terraformer/cmd.version="+v)
+				}
+				cmd := exec.Command("go", buildArgs...)
 				cmd.Env = os.Environ()
 				cmd.Env = append(cmd.Env, "GOOS="+GOOS)
 				cmd.Env = append(cmd.Env, "GOARCH="+arch)

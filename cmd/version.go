@@ -6,7 +6,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const version = "v0.8.30"
+// version is stamped at release time via
+// -ldflags "-X github.com/GoogleCloudPlatform/terraformer/cmd.version=<tag>"
+// (see .github/workflows/release.yaml). Unstamped builds report "dev".
+var version = "dev"
 
 var versionCmd = &cobra.Command{
 	Use:   "version",
