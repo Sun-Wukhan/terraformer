@@ -21,6 +21,13 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/eventhub/armeventhub"
 )
 
+// EventHubGenerator covers Event Hubs namespaces, hubs, consumer groups,
+// authorization rules, dedicated clusters, disaster recovery aliases and
+// schema groups.
+// Skipped in this family:
+//   - azurerm_eventhub_namespace_customer_managed_key: an embedded property
+//     (properties.encryption) of the namespace itself, with no independent
+//     ARM object or List.
 type EventHubGenerator struct {
 	AzureService
 }
@@ -79,6 +86,10 @@ func (az *EventHubGenerator) appendEventHubs(namespace *armeventhub.EHNamespace,
 			if err != nil {
 				return err
 			}
+			err = az.appendEventHubAuthorizationRules(namespace, namespaceRg, *item.Name)
+			if err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -124,7 +135,99 @@ func (az *EventHubGenerator) appendAuthorizationRules(namespace *armeventhub.EHN
 	return nil
 }
 
+func (az *EventHubGenerator) appendEventHubAuthorizationRules(namespace *armeventhub.EHNamespace, namespaceRg *ResourceID, eventHubName string) error {
+	client, err := armeventhub.NewEventHubsClient(az.getSubscriptionID(), az.getCredential(), az.armClientOptions())
+	if err != nil {
+		return err
+	}
+	ctx := context.Background()
+	pager := client.NewListAuthorizationRulesPager(namespaceRg.ResourceGroup, *namespace.Name, eventHubName, nil)
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			log.Println(err)
+			return err
+		}
+		for _, item := range page.Value {
+			az.AppendSimpleResource(*item.ID, *item.Name, "azurerm_eventhub_authorization_rule")
+		}
+	}
+	return nil
+}
+
+func (az *EventHubGenerator) appendNamespaceChildren(namespace *armeventhub.EHNamespace, namespaceRg *ResourceID) error {
+	ctx := context.Background()
+	drClient, err := armeventhub.NewDisasterRecoveryConfigsClient(az.getSubscriptionID(), az.getCredential(), az.armClientOptions())
+	if err != nil {
+		return err
+	}
+	pager := drClient.NewListPager(namespaceRg.ResourceGroup, *namespace.Name, nil)
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			log.Println(err)
+			return err
+		}
+		for _, item := range page.Value {
+			az.AppendSimpleResource(*item.ID, *item.Name, "azurerm_eventhub_namespace_disaster_recovery_config")
+		}
+	}
+	schemaClient, err := armeventhub.NewSchemaRegistryClient(az.getSubscriptionID(), az.getCredential(), az.armClientOptions())
+	if err != nil {
+		return err
+	}
+	schemaPager := schemaClient.NewListByNamespacePager(namespaceRg.ResourceGroup, *namespace.Name, nil)
+	for schemaPager.More() {
+		page, err := schemaPager.NextPage(ctx)
+		if err != nil {
+			log.Println(err)
+			return err
+		}
+		for _, item := range page.Value {
+			az.AppendSimpleResource(*item.ID, *item.Name, "azurerm_eventhub_namespace_schema_group")
+		}
+	}
+	return nil
+}
+
+func (az *EventHubGenerator) appendClusters() error {
+	client, err := armeventhub.NewClustersClient(az.getSubscriptionID(), az.getCredential(), az.armClientOptions())
+	if err != nil {
+		return err
+	}
+	ctx := context.Background()
+	if rg := az.getResourceGroup(); rg != "" {
+		pager := client.NewListByResourceGroupPager(rg, nil)
+		for pager.More() {
+			page, err := pager.NextPage(ctx)
+			if err != nil {
+				log.Println(err)
+				return err
+			}
+			for _, item := range page.Value {
+				az.AppendSimpleResource(*item.ID, *item.Name, "azurerm_eventhub_cluster")
+			}
+		}
+		return nil
+	}
+	pager := client.NewListBySubscriptionPager(nil)
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			log.Println(err)
+			return err
+		}
+		for _, item := range page.Value {
+			az.AppendSimpleResource(*item.ID, *item.Name, "azurerm_eventhub_cluster")
+		}
+	}
+	return nil
+}
+
 func (az *EventHubGenerator) InitResources() error {
+	if err := az.appendClusters(); err != nil {
+		return err
+	}
 
 	namespaces, err := az.listNamespaces()
 	if err != nil {
@@ -141,6 +244,10 @@ func (az *EventHubGenerator) InitResources() error {
 			return err
 		}
 		err = az.appendAuthorizationRules(namespace, namespaceRg)
+		if err != nil {
+			return err
+		}
+		err = az.appendNamespaceChildren(namespace, namespaceRg)
 		if err != nil {
 			return err
 		}

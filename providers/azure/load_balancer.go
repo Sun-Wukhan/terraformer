@@ -106,6 +106,122 @@ func (g *LoadBalancerGenerator) listInboundNatRules(resourceGroupName string, lo
 	return resources, nil
 }
 
+func (g *LoadBalancerGenerator) listLoadBalancingRules(resourceGroupName string, loadBalancerName string) ([]terraformutils.Resource, error) {
+	var resources []terraformutils.Resource
+	ctx := context.Background()
+
+	client, err := armnetwork.NewLoadBalancerLoadBalancingRulesClient(g.getSubscriptionID(), g.getCredential(), g.armClientOptions())
+	if err != nil {
+		return nil, err
+	}
+	pager := client.NewListPager(resourceGroupName, loadBalancerName, nil)
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			log.Println(err)
+			break
+		}
+		for _, rule := range page.Value {
+			// As with probes above, the importer ID is the rule's own ARM ID
+			// ({loadBalancerId}/loadBalancingRules/{name}); work out the
+			// loadbalancer_id attribute the same way.
+			re := regexp.MustCompile(`/loadBalancingRules/.*$`)
+			loadBalancerID := re.ReplaceAllLiteralString(*rule.ID, "")
+			resources = append(resources, terraformutils.NewResource(
+				*rule.ID,
+				*rule.Name,
+				"azurerm_lb_rule",
+				g.ProviderName,
+				map[string]string{
+					"loadbalancer_id": loadBalancerID,
+				},
+				[]string{},
+				map[string]interface{}{},
+			))
+		}
+	}
+
+	return resources, nil
+}
+
+func (g *LoadBalancerGenerator) listOutboundRules(resourceGroupName string, loadBalancerName string) ([]terraformutils.Resource, error) {
+	var resources []terraformutils.Resource
+	ctx := context.Background()
+
+	client, err := armnetwork.NewLoadBalancerOutboundRulesClient(g.getSubscriptionID(), g.getCredential(), g.armClientOptions())
+	if err != nil {
+		return nil, err
+	}
+	pager := client.NewListPager(resourceGroupName, loadBalancerName, nil)
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			log.Println(err)
+			break
+		}
+		for _, rule := range page.Value {
+			re := regexp.MustCompile(`/outboundRules/.*$`)
+			loadBalancerID := re.ReplaceAllLiteralString(*rule.ID, "")
+			resources = append(resources, terraformutils.NewResource(
+				*rule.ID,
+				*rule.Name,
+				"azurerm_lb_outbound_rule",
+				g.ProviderName,
+				map[string]string{
+					"loadbalancer_id": loadBalancerID,
+				},
+				[]string{},
+				map[string]interface{}{},
+			))
+		}
+	}
+
+	return resources, nil
+}
+
+// NAT pools are embedded in the load balancer object
+// (properties.inboundNatPools); each carries its own ARM ID, which is the
+// azurerm_lb_nat_pool importer ID. There is no separate List client.
+func loadBalancerNatPoolResources(loadBalancer *armnetwork.LoadBalancer) []terraformutils.Resource {
+	var resources []terraformutils.Resource
+	if loadBalancer.Properties == nil {
+		return resources
+	}
+	for _, pool := range loadBalancer.Properties.InboundNatPools {
+		if pool.ID != nil && pool.Name != nil {
+			resources = append(resources, terraformutils.NewSimpleResource(
+				*pool.ID,
+				*pool.Name,
+				"azurerm_lb_nat_pool",
+				"azurerm",
+				[]string{}))
+		}
+	}
+	return resources
+}
+
+// Backend addresses are embedded in each backend address pool object
+// (properties.backendAddresses) with a name but no ARM ID; their importer
+// ID is {backendAddressPoolId}/addresses/{name}, verified in the
+// provider's Import documentation.
+func backendAddressPoolAddressResources(pool *armnetwork.BackendAddressPool) []terraformutils.Resource {
+	var resources []terraformutils.Resource
+	if pool.ID == nil || pool.Properties == nil {
+		return resources
+	}
+	for _, address := range pool.Properties.LoadBalancerBackendAddresses {
+		if address.Name != nil {
+			resources = append(resources, terraformutils.NewSimpleResource(
+				*pool.ID+"/addresses/"+*address.Name,
+				*address.Name,
+				"azurerm_lb_backend_address_pool_address",
+				"azurerm",
+				[]string{}))
+		}
+	}
+	return resources
+}
+
 func (g *LoadBalancerGenerator) listLoadBalancerBackendAddressPools(resourceGroupName string, loadBalancerName string) ([]terraformutils.Resource, error) {
 	var resources []terraformutils.Resource
 	ctx := context.Background()
@@ -137,6 +253,7 @@ func (g *LoadBalancerGenerator) listLoadBalancerBackendAddressPools(resourceGrou
 				[]string{},
 				map[string]interface{}{},
 			))
+			resources = append(resources, backendAddressPoolAddressResources(pool)...)
 		}
 	}
 
@@ -182,6 +299,20 @@ func (g *LoadBalancerGenerator) listAndAddForLoadBalancers() ([]terraformutils.R
 			return err
 		}
 		resources = append(resources, backendAddressPools...)
+
+		loadBalancingRules, err := g.listLoadBalancingRules(id.ResourceGroup, *loadBalancer.Name)
+		if err != nil {
+			return err
+		}
+		resources = append(resources, loadBalancingRules...)
+
+		outboundRules, err := g.listOutboundRules(id.ResourceGroup, *loadBalancer.Name)
+		if err != nil {
+			return err
+		}
+		resources = append(resources, outboundRules...)
+
+		resources = append(resources, loadBalancerNatPoolResources(loadBalancer)...)
 		return nil
 	}
 
