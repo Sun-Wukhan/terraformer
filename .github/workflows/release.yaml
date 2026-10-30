@@ -22,14 +22,16 @@ jobs:
       - name: Test
         run: go build -v && go test ./...
       - name: Build for linux/amd64
-        run: go build -o terraformer-all-linux-amd64
+        run: go build -ldflags "-X github.com/GoogleCloudPlatform/terraformer/cmd.version=${{ github.event.inputs.version }}" -o terraformer-all-linux-amd64
       - name: Build for linux/arm64
-        run: GOOS=linux GOARCH=arm64 go build -o terraformer-all-linux-arm64
+        run: GOOS=linux GOARCH=arm64 go build -ldflags "-X github.com/GoogleCloudPlatform/terraformer/cmd.version=${{ github.event.inputs.version }}" -o terraformer-all-linux-arm64
       - name: Build for mac
-        run: GOOS=darwin go build -o terraformer-all-darwin-amd64
+        run: GOOS=darwin go build -ldflags "-X github.com/GoogleCloudPlatform/terraformer/cmd.version=${{ github.event.inputs.version }}" -o terraformer-all-darwin-amd64
       - name: Build for mac Apple Silicon
-        run: GOOS=darwin GOARCH=arm64 go build -o terraformer-all-darwin-arm64
+        run: GOOS=darwin GOARCH=arm64 go build -ldflags "-X github.com/GoogleCloudPlatform/terraformer/cmd.version=${{ github.event.inputs.version }}" -o terraformer-all-darwin-arm64
       - name: Build for all providers
+        env:
+          VERSION: ${{ github.event.inputs.version }}
         run: go run build/multi-build/main.go
 
       - name: Create release
