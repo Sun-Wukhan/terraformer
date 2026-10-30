@@ -111,7 +111,12 @@ func (g *ApplicationInsightsGenerator) InitResources() error {
 	if err := g.listWebTests(ctx); err != nil {
 		return err
 	}
-	return g.listWorkbooks(ctx)
+	// The pinned SDK lists workbooks with an API version ARM no longer
+	// accepts in some regions; don't let that drop every other resource.
+	if err := g.listWorkbooks(ctx); err != nil {
+		g.RecordFailure("azurerm_application_insights_workbook", err)
+	}
+	return nil
 }
 
 func (g *ApplicationInsightsGenerator) listAPIKeys(ctx context.Context, refs []appInsightsComponentRef) error {

@@ -853,6 +853,14 @@ func (g *APIManagementGenerator) listRedisCaches(ctx context.Context, refs []api
 	})
 }
 
+// isAPIMServiceScope reports whether an APIM subscription scope is the whole
+// service (e.g. the built-in "master" subscription) rather than a product or
+// API; azurerm's importer only parses product/API scopes.
+func isAPIMServiceScope(scope string) bool {
+	parts := strings.Split(strings.Trim(scope, "/"), "/")
+	return len(parts) >= 2 && strings.EqualFold(parts[len(parts)-2], "service")
+}
+
 func (g *APIManagementGenerator) listSubscriptions(ctx context.Context, refs []apimServiceRef) ([]terraformutils.Resource, error) {
 	client, err := armapimanagement.NewSubscriptionClient(g.getSubscriptionID(), g.getCredential(), g.armClientOptions())
 	if err != nil {
@@ -865,6 +873,10 @@ func (g *APIManagementGenerator) listSubscriptions(ctx context.Context, refs []a
 			},
 			func(item *armapimanagement.SubscriptionContract) (terraformutils.Resource, bool) {
 				if item.ID == nil || item.Name == nil {
+					return terraformutils.Resource{}, false
+				}
+				if item.Properties != nil && item.Properties.Scope != nil && isAPIMServiceScope(*item.Properties.Scope) {
+					log.Printf("INFO: skipping APIM subscription %s: service-wide scope cannot be imported by azurerm", *item.ID)
 					return terraformutils.Resource{}, false
 				}
 				return g.simple(*item.ID, *item.Name, "azurerm_api_management_subscription")

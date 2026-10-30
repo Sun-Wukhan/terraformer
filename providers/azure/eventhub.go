@@ -172,6 +172,10 @@ func (az *EventHubGenerator) appendNamespaceChildren(namespace *armeventhub.EHNa
 			az.AppendSimpleResource(*item.ID, *item.Name, "azurerm_eventhub_namespace_disaster_recovery_config")
 		}
 	}
+	// Basic namespaces have no schema registry; listing it returns a 400.
+	if namespace.SKU != nil && namespace.SKU.Name != nil && *namespace.SKU.Name == armeventhub.SKUNameBasic {
+		return nil
+	}
 	schemaClient, err := armeventhub.NewSchemaRegistryClient(az.getSubscriptionID(), az.getCredential(), az.armClientOptions())
 	if err != nil {
 		return err
