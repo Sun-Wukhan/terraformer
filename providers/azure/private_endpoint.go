@@ -93,6 +93,33 @@ func (az *PrivateEndpointGenerator) listEndpoints() ([]*armnetwork.PrivateEndpoi
 
 func (az *PrivateEndpointGenerator) AppendEndpoint(link *armnetwork.PrivateEndpoint) {
 	az.AppendSimpleResource(*link.ID, *link.Name, "azurerm_private_endpoint")
+	az.appendASGAssociations(link)
+}
+
+// The azurerm association uses a Terraform-specific composite ID of the
+// form {privateEndpointId}|{applicationSecurityGroupId} (verified in the
+// provider's Import documentation); the associations are the
+// applicationSecurityGroups references on the private endpoint object.
+func (az *PrivateEndpointGenerator) appendASGAssociations(endpoint *armnetwork.PrivateEndpoint) {
+	if endpoint.ID == nil || endpoint.Name == nil || endpoint.Properties == nil {
+		return
+	}
+	for _, asg := range endpoint.Properties.ApplicationSecurityGroups {
+		if asg.ID == nil {
+			continue
+		}
+		name := *endpoint.Name + "-asg"
+		if asg.Name != nil {
+			name = *endpoint.Name + "-" + *asg.Name
+		}
+		az.appendSimpleAssociation(
+			*endpoint.ID+"|"+*asg.ID, *endpoint.Name, &name,
+			"azurerm_private_endpoint_application_security_group_association",
+			map[string]string{
+				"private_endpoint_id":           *endpoint.ID,
+				"application_security_group_id": *asg.ID,
+			})
+	}
 }
 
 func (az *PrivateEndpointGenerator) InitResources() error {

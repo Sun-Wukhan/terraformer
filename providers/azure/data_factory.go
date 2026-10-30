@@ -76,8 +76,25 @@ var (
 		"BlobEventsTrigger":        "azurerm_data_factory_trigger_blob_event",
 		"ScheduleTrigger":          "azurerm_data_factory_trigger_schedule",
 		"TumblingWindowTrigger":    "azurerm_data_factory_trigger_tumbling_window",
+		// Added by the Azure full-coverage sweep (data cluster):
+		"AzureSqlTable":       "azurerm_data_factory_dataset_azure_sql_table",
+		"CosmosDbMongoDbApi":  "azurerm_data_factory_linked_service_cosmosdb_mongoapi",
+		"Odbc":                "azurerm_data_factory_linked_service_odbc",
+		"CustomEventsTrigger": "azurerm_data_factory_trigger_custom_event",
 	}
 )
+
+// Sweep notes for this family:
+//   - azurerm_data_factory_linked_service_sql_managed_instance is skipped:
+//     armdatafactory v1.3.0 has no SqlManagedInstance linked-service type or
+//     discriminator, so generic linked-service enumeration cannot produce it.
+//   - azurerm_data_factory_credential_service_principal and
+//     azurerm_data_factory_credential_user_managed_identity are skipped:
+//     armdatafactory v1.3.0 has no CredentialsClient (credentials are not
+//     exposed by the track-2 SDK), so there is no List to enumerate.
+//   - azurerm_data_factory_customer_managed_key is skipped: a singleton
+//     setting on the factory itself (its provider importer ID is the
+//     factory ID); there is no separate ARM resource.
 
 func getResourceTypeFrom(azureResourceName string) string {
 	return SupportedResources[azureResourceName]
@@ -320,7 +337,54 @@ func (az *DataFactoryGenerator) createDataFlowResources(dataFactories []*armdata
 				return resources, err
 			}
 			for _, item := range page.Value {
-				resources = az.appendResourceAs(resources, *item.ID, *item.Name, "azurerm_data_factory_data_flow", "adfl")
+				// Flowlets share the dataflows ARM collection with mapping
+				// data flows; discriminate on the properties type.
+				if getFieldAsString(item.Properties, "Type") == "Flowlet" {
+					resources = az.appendResourceAs(resources, *item.ID, *item.Name, "azurerm_data_factory_flowlet_data_flow", "adfl")
+				} else {
+					resources = az.appendResourceAs(resources, *item.ID, *item.Name, "azurerm_data_factory_data_flow", "adfl")
+				}
+			}
+		}
+	}
+	return resources, nil
+}
+
+func (az *DataFactoryGenerator) createManagedPrivateEndpointResources(dataFactories []*armdatafactory.Factory) ([]terraformutils.Resource, error) {
+	virtualNetworksClient, err := armdatafactory.NewManagedVirtualNetworksClient(az.getSubscriptionID(), az.getCredential(), az.armClientOptions())
+	if err != nil {
+		return nil, err
+	}
+	client, err := armdatafactory.NewManagedPrivateEndpointsClient(az.getSubscriptionID(), az.getCredential(), az.armClientOptions())
+	if err != nil {
+		return nil, err
+	}
+	ctx := context.Background()
+	var resources []terraformutils.Resource
+	for _, factory := range dataFactories {
+		id, err := ParseAzureResourceID(*factory.ID)
+		if err != nil {
+			return nil, err
+		}
+		virtualNetworksPager := virtualNetworksClient.NewListByFactoryPager(id.ResourceGroup, *factory.Name, nil)
+		for virtualNetworksPager.More() {
+			virtualNetworksPage, err := virtualNetworksPager.NextPage(ctx)
+			if err != nil {
+				log.Println(err)
+				return resources, err
+			}
+			for _, virtualNetwork := range virtualNetworksPage.Value {
+				pager := client.NewListByFactoryPager(id.ResourceGroup, *factory.Name, *virtualNetwork.Name, nil)
+				for pager.More() {
+					page, err := pager.NextPage(ctx)
+					if err != nil {
+						log.Println(err)
+						return resources, err
+					}
+					for _, item := range page.Value {
+						resources = az.appendResourceAs(resources, *item.ID, *item.Name, "azurerm_data_factory_managed_private_endpoint", "adfmpe")
+					}
+				}
 			}
 		}
 	}
@@ -369,6 +433,7 @@ func (az *DataFactoryGenerator) InitResources() error {
 		az.createPipelineTriggerScheduleResources,
 		az.createPipelineDatasetResources,
 		az.createDataFlowResources,
+		az.createManagedPrivateEndpointResources,
 	}
 
 	for _, f := range factoriesFunctions {

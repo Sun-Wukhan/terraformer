@@ -81,8 +81,232 @@ func (az *SynapseGenerator) appendSQLPools(workspace *armsynapse.Workspace, work
 		}
 		for _, item := range page.Value {
 			az.AppendSimpleResource(*item.ID, *item.Name, "azurerm_synapse_sql_pool")
+			if err := az.appendSQLPoolChildren(workspace, workspaceRg, *item.Name); err != nil {
+				return err
+			}
 		}
 	}
+	return nil
+}
+
+// Sweep additions (data cluster). Skipped in this family:
+//   - azurerm_synapse_workspace_aad_admin and
+//     azurerm_synapse_workspace_sql_aad_admin: singleton settings;
+//     armsynapse WorkspaceAADAdminsClient / WorkspaceSQLAADAdminsClient are
+//     Get-only (fixed name "activeDirectory"), no List pager.
+//   - azurerm_synapse_sql_pool_vulnerability_assessment_baseline: armsynapse
+//     SQLPoolVulnerabilityAssessmentRuleBaselinesClient is Get-only per
+//     rule/baseline name, no List pager.
+//   - azurerm_synapse_linked_service and azurerm_synapse_role_assignment:
+//     data-plane only (managed through the workspace's Synapse artifacts /
+//     RBAC endpoints at {workspace}.dev.azuresynapse.net); armsynapse has
+//     no ARM client for either.
+
+// synapseIntegrationRuntimeType maps the ARM integration runtime type to
+// the provider resource type.
+func synapseIntegrationRuntimeType(properties armsynapse.IntegrationRuntimeClassification) string {
+	if properties == nil {
+		return ""
+	}
+	base := properties.GetIntegrationRuntime()
+	if base == nil || base.Type == nil {
+		return ""
+	}
+	switch *base.Type {
+	case armsynapse.IntegrationRuntimeTypeManaged:
+		return "azurerm_synapse_integration_runtime_azure"
+	case armsynapse.IntegrationRuntimeTypeSelfHosted:
+		return "azurerm_synapse_integration_runtime_self_hosted"
+	}
+	return ""
+}
+
+func (az *SynapseGenerator) appendIntegrationRuntimes(workspace *armsynapse.Workspace, workspaceRg *ResourceID) error {
+	client, err := armsynapse.NewIntegrationRuntimesClient(az.getSubscriptionID(), az.getCredential(), az.armClientOptions())
+	if err != nil {
+		return err
+	}
+	ctx := context.Background()
+	pager := client.NewListByWorkspacePager(workspaceRg.ResourceGroup, *workspace.Name, nil)
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			log.Println(err)
+			return err
+		}
+		for _, item := range page.Value {
+			resourceType := synapseIntegrationRuntimeType(item.Properties)
+			if resourceType == "" {
+				continue
+			}
+			az.AppendSimpleResource(*item.ID, *item.Name, resourceType)
+		}
+	}
+	return nil
+}
+
+func (az *SynapseGenerator) appendWorkspaceKeys(workspace *armsynapse.Workspace, workspaceRg *ResourceID) error {
+	client, err := armsynapse.NewKeysClient(az.getSubscriptionID(), az.getCredential(), az.armClientOptions())
+	if err != nil {
+		return err
+	}
+	ctx := context.Background()
+	pager := client.NewListByWorkspacePager(workspaceRg.ResourceGroup, *workspace.Name, nil)
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			log.Println(err)
+			return err
+		}
+		for _, item := range page.Value {
+			az.AppendSimpleResource(*item.ID, *item.Name, "azurerm_synapse_workspace_key")
+		}
+	}
+	return nil
+}
+
+// appendWorkspacePolicies enumerates the workspace-level (managed SQL
+// server) singleton policies; each List endpoint returns the single
+// "default"/"Default" policy whose ID is the provider importer ID.
+func (az *SynapseGenerator) appendWorkspacePolicies(workspace *armsynapse.Workspace, workspaceRg *ResourceID) error {
+	ctx := context.Background()
+
+	extendedAuditingClient, err := armsynapse.NewWorkspaceManagedSQLServerExtendedBlobAuditingPoliciesClient(az.getSubscriptionID(), az.getCredential(), az.armClientOptions())
+	if err != nil {
+		return err
+	}
+	extendedAuditingPager := extendedAuditingClient.NewListByWorkspacePager(workspaceRg.ResourceGroup, *workspace.Name, nil)
+	for extendedAuditingPager.More() {
+		page, err := extendedAuditingPager.NextPage(ctx)
+		if err != nil {
+			log.Println(err)
+			return err
+		}
+		for _, item := range page.Value {
+			az.AppendSimpleResource(*item.ID, *item.Name+"-"+*workspace.Name, "azurerm_synapse_workspace_extended_auditing_policy")
+		}
+	}
+
+	securityAlertClient, err := armsynapse.NewWorkspaceManagedSQLServerSecurityAlertPolicyClient(az.getSubscriptionID(), az.getCredential(), az.armClientOptions())
+	if err != nil {
+		return err
+	}
+	securityAlertPager := securityAlertClient.NewListPager(workspaceRg.ResourceGroup, *workspace.Name, nil)
+	for securityAlertPager.More() {
+		page, err := securityAlertPager.NextPage(ctx)
+		if err != nil {
+			log.Println(err)
+			return err
+		}
+		for _, item := range page.Value {
+			az.AppendSimpleResource(*item.ID, *item.Name+"-"+*workspace.Name, "azurerm_synapse_workspace_security_alert_policy")
+		}
+	}
+
+	vulnerabilityClient, err := armsynapse.NewWorkspaceManagedSQLServerVulnerabilityAssessmentsClient(az.getSubscriptionID(), az.getCredential(), az.armClientOptions())
+	if err != nil {
+		return err
+	}
+	vulnerabilityPager := vulnerabilityClient.NewListPager(workspaceRg.ResourceGroup, *workspace.Name, nil)
+	for vulnerabilityPager.More() {
+		page, err := vulnerabilityPager.NextPage(ctx)
+		if err != nil {
+			log.Println(err)
+			return err
+		}
+		for _, item := range page.Value {
+			az.AppendSimpleResource(*item.ID, *item.Name+"-"+*workspace.Name, "azurerm_synapse_workspace_vulnerability_assessment")
+		}
+	}
+
+	return nil
+}
+
+// appendSQLPoolChildren enumerates the per-pool policies and workload
+// groups/classifiers; the policy List endpoints return the single
+// "default" policy whose ID is the provider importer ID.
+func (az *SynapseGenerator) appendSQLPoolChildren(workspace *armsynapse.Workspace, workspaceRg *ResourceID, sqlPoolName string) error {
+	ctx := context.Background()
+
+	extendedAuditingClient, err := armsynapse.NewExtendedSQLPoolBlobAuditingPoliciesClient(az.getSubscriptionID(), az.getCredential(), az.armClientOptions())
+	if err != nil {
+		return err
+	}
+	extendedAuditingPager := extendedAuditingClient.NewListBySQLPoolPager(workspaceRg.ResourceGroup, *workspace.Name, sqlPoolName, nil)
+	for extendedAuditingPager.More() {
+		page, err := extendedAuditingPager.NextPage(ctx)
+		if err != nil {
+			log.Println(err)
+			return err
+		}
+		for _, item := range page.Value {
+			az.AppendSimpleResource(*item.ID, *item.Name+"-"+sqlPoolName, "azurerm_synapse_sql_pool_extended_auditing_policy")
+		}
+	}
+
+	securityAlertClient, err := armsynapse.NewSQLPoolSecurityAlertPoliciesClient(az.getSubscriptionID(), az.getCredential(), az.armClientOptions())
+	if err != nil {
+		return err
+	}
+	securityAlertPager := securityAlertClient.NewListPager(workspaceRg.ResourceGroup, *workspace.Name, sqlPoolName, nil)
+	for securityAlertPager.More() {
+		page, err := securityAlertPager.NextPage(ctx)
+		if err != nil {
+			log.Println(err)
+			return err
+		}
+		for _, item := range page.Value {
+			az.AppendSimpleResource(*item.ID, *item.Name+"-"+sqlPoolName, "azurerm_synapse_sql_pool_security_alert_policy")
+		}
+	}
+
+	vulnerabilityClient, err := armsynapse.NewSQLPoolVulnerabilityAssessmentsClient(az.getSubscriptionID(), az.getCredential(), az.armClientOptions())
+	if err != nil {
+		return err
+	}
+	vulnerabilityPager := vulnerabilityClient.NewListPager(workspaceRg.ResourceGroup, *workspace.Name, sqlPoolName, nil)
+	for vulnerabilityPager.More() {
+		page, err := vulnerabilityPager.NextPage(ctx)
+		if err != nil {
+			log.Println(err)
+			return err
+		}
+		for _, item := range page.Value {
+			az.AppendSimpleResource(*item.ID, *item.Name+"-"+sqlPoolName, "azurerm_synapse_sql_pool_vulnerability_assessment")
+		}
+	}
+
+	workloadGroupsClient, err := armsynapse.NewSQLPoolWorkloadGroupClient(az.getSubscriptionID(), az.getCredential(), az.armClientOptions())
+	if err != nil {
+		return err
+	}
+	workloadClassifiersClient, err := armsynapse.NewSQLPoolWorkloadClassifierClient(az.getSubscriptionID(), az.getCredential(), az.armClientOptions())
+	if err != nil {
+		return err
+	}
+	workloadGroupsPager := workloadGroupsClient.NewListPager(workspaceRg.ResourceGroup, *workspace.Name, sqlPoolName, nil)
+	for workloadGroupsPager.More() {
+		page, err := workloadGroupsPager.NextPage(ctx)
+		if err != nil {
+			log.Println(err)
+			return err
+		}
+		for _, group := range page.Value {
+			az.AppendSimpleResource(*group.ID, *group.Name, "azurerm_synapse_sql_pool_workload_group")
+			classifiersPager := workloadClassifiersClient.NewListPager(workspaceRg.ResourceGroup, *workspace.Name, sqlPoolName, *group.Name, nil)
+			for classifiersPager.More() {
+				classifiersPage, err := classifiersPager.NextPage(ctx)
+				if err != nil {
+					log.Println(err)
+					return err
+				}
+				for _, classifier := range classifiersPage.Value {
+					az.AppendSimpleResource(*classifier.ID, *classifier.Name, "azurerm_synapse_sql_pool_workload_classifier")
+				}
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -220,6 +444,18 @@ func (az *SynapseGenerator) InitResources() error {
 			return err
 		}
 		err = az.appendManagedPrivateEndpoint(&workspace)
+		if err != nil {
+			return err
+		}
+		err = az.appendIntegrationRuntimes(&workspace, workspaceRg)
+		if err != nil {
+			return err
+		}
+		err = az.appendWorkspaceKeys(&workspace, workspaceRg)
+		if err != nil {
+			return err
+		}
+		err = az.appendWorkspacePolicies(&workspace, workspaceRg)
 		if err != nil {
 			return err
 		}

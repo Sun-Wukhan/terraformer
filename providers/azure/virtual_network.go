@@ -72,6 +72,77 @@ func (g *VirtualNetworkGenerator) InitResources() error {
 			g.appendResources(page.Value)
 		}
 	}
+	return g.appendPeerings()
+}
+
+// appendPeerings enumerates the peerings of every virtual network just
+// listed. The peering importer ID is the peering's own ARM ID
+// ({vnetId}/virtualNetworkPeerings/{name}), verified in the provider's
+// Import documentation.
+//
+// Skipped here: azurerm_virtual_network_dns_servers — it is a PUT-only
+// sub-resource of the virtual network (the dnsServers array on the VNet
+// object itself); there is no independent ARM object or List operation
+// for it in armnetwork.
+func (g *VirtualNetworkGenerator) appendPeerings() error {
+	ctx := context.Background()
+	vnetClient, err := armnetwork.NewVirtualNetworksClient(g.getSubscriptionID(), g.getCredential(), g.armClientOptions())
+	if err != nil {
+		return err
+	}
+	peeringClient, err := armnetwork.NewVirtualNetworkPeeringsClient(g.getSubscriptionID(), g.getCredential(), g.armClientOptions())
+	if err != nil {
+		return err
+	}
+	var vnets []*armnetwork.VirtualNetwork
+	if rg := g.getResourceGroup(); rg != "" {
+		pager := vnetClient.NewListPager(rg, nil)
+		for pager.More() {
+			page, err := pager.NextPage(ctx)
+			if err != nil {
+				log.Println(err)
+				return err
+			}
+			vnets = append(vnets, page.Value...)
+		}
+	} else {
+		pager := vnetClient.NewListAllPager(nil)
+		for pager.More() {
+			page, err := pager.NextPage(ctx)
+			if err != nil {
+				log.Println(err)
+				return err
+			}
+			vnets = append(vnets, page.Value...)
+		}
+	}
+	for _, vnet := range vnets {
+		if vnet.ID == nil || vnet.Name == nil {
+			continue
+		}
+		id, err := ParseAzureResourceID(*vnet.ID)
+		if err != nil {
+			return err
+		}
+		pager := peeringClient.NewListPager(id.ResourceGroup, *vnet.Name, nil)
+		for pager.More() {
+			page, err := pager.NextPage(ctx)
+			if err != nil {
+				log.Println(err)
+				return err
+			}
+			for _, peering := range page.Value {
+				if peering.ID != nil && peering.Name != nil {
+					g.Resources = append(g.Resources, terraformutils.NewSimpleResource(
+						*peering.ID,
+						*peering.Name,
+						"azurerm_virtual_network_peering",
+						g.ProviderName,
+						[]string{}))
+				}
+			}
+		}
+	}
 	return nil
 }
 
