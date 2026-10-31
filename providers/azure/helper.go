@@ -108,6 +108,69 @@ func ParseAzureResourceID(id string) (*ResourceID, error) {
 	return idObj, nil
 }
 
+// canonicalProviderNamespaces maps lowercased resource provider namespaces
+// that some APIs return in lower case to the casing azurerm's importers
+// require.
+var canonicalProviderNamespaces = map[string]string{
+	"microsoft.insights": "Microsoft.Insights",
+}
+
+// canonicalIDSegments lists, per lowercased resource provider namespace, the
+// ID key segments azurerm's case-sensitive importers expect in exactly this
+// casing but the ARM APIs return lowercased. Scoped per namespace because the
+// same key differs between services (e.g. IoT Hub uses `ConsumerGroups`,
+// Event Hubs `consumerGroups`).
+var canonicalIDSegments = map[string][]string{
+	"microsoft.eventhub":        {"authorizationRules", "consumerGroups"},
+	"microsoft.insights":        {"actionGroups", "metricAlerts", "webTests"},
+	"microsoft.loadtestservice": {"loadTests"},
+	"microsoft.relay":           {"authorizationRules", "hybridConnections"},
+	"microsoft.servicebus":      {"authorizationRules"},
+	"microsoft.web":             {"serverFarms"},
+}
+
+// canonicalAzureID rewrites the casing of an ARM ID's key segments (and its
+// provider namespaces) to what azurerm's importers accept, so e.g.
+// `.../resourcegroups/rg/providers/microsoft.insights/metricalerts/x` imports.
+// Resource names are never changed.
+func canonicalAzureID(id string) string {
+	parts := strings.Split(id, "/")
+	var segments []string
+	for i := 1; i+1 < len(parts); i += 2 {
+		key := parts[i]
+		switch {
+		case strings.EqualFold(key, "resourceGroups"):
+			parts[i] = "resourceGroups"
+		case strings.EqualFold(key, "providers"):
+			namespace := strings.ToLower(parts[i+1])
+			if canonical, ok := canonicalProviderNamespaces[namespace]; ok {
+				parts[i+1] = canonical
+			}
+			segments = canonicalIDSegments[namespace]
+		default:
+			for _, s := range segments {
+				if strings.EqualFold(key, s) {
+					parts[i] = s
+					break
+				}
+			}
+		}
+	}
+	return strings.Join(parts, "/")
+}
+
+// resourceGroupOfID returns the resource group named in an ARM ID, or "" for
+// IDs that are not scoped to a resource group.
+func resourceGroupOfID(id string) string {
+	parts := strings.Split(id, "/")
+	for i := 1; i+1 < len(parts); i += 2 {
+		if strings.EqualFold(parts[i], "resourceGroups") {
+			return parts[i+1]
+		}
+	}
+	return ""
+}
+
 func GenerateRandomString(strlen int) string {
 	var lettersToUsed = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
 	RandomSlice := make([]rune, strlen)

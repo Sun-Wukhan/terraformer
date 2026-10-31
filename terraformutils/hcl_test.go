@@ -53,6 +53,40 @@ func TestPrintResource(t *testing.T) {
 	}
 }
 
+func TestHclPrintResourceKeepsListOrder(t *testing.T) {
+	importResource := prepare("ID1", "type1", map[string]string{
+		"perms.#":         "3",
+		"perms.0":         "Update",
+		"perms.1":         "Get",
+		"perms.2":         "Backup",
+		"rule.#":          "2",
+		"rule.0.priority": "200",
+		"rule.1.priority": "100",
+	}, map[string]interface{}{
+		"perms": []interface{}{"Update", "Get", "Backup"},
+		"rule": []interface{}{
+			map[string]interface{}{"priority": "200"},
+			map[string]interface{}{"priority": "100"},
+		},
+		"zeta":  "last",
+		"alpha": "first",
+	})
+	data, err := HclPrintResource([]Resource{importResource}, map[string]interface{}{}, "hcl", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := string(data)
+	if !strings.Contains(out, `["Update", "Get", "Backup"]`) {
+		t.Errorf("list values were reordered:\n%s", out)
+	}
+	if strings.Index(out, `"200"`) > strings.Index(out, `"100"`) {
+		t.Errorf("repeated blocks were reordered:\n%s", out)
+	}
+	if strings.Index(out, "alpha") > strings.Index(out, "zeta") {
+		t.Errorf("attributes not sorted by key:\n%s", out)
+	}
+}
+
 func TestStripInterpolationOnly(t *testing.T) {
 	in := "value = \"${azurerm_resource_group.tfer--rg1.id}\"\n" +
 		"name = \"prefix-${var.foo}-suffix\"\n" +

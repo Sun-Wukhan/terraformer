@@ -17,6 +17,8 @@ package providerwrapper
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/hashicorp/terraform/configs/configschema"
@@ -63,6 +65,55 @@ type attributeJSON struct {
 	Optional    bool            `json:"optional"`
 	Computed    bool            `json:"computed"`
 	Sensitive   bool            `json:"sensitive"`
+	Deprecated  bool            `json:"deprecated"`
+}
+
+// deprecatedAttributePatterns walks a schema JSON block collecting anchored
+// flatmap-key patterns for its deprecated attributes (configschema has no
+// Deprecated flag, so this is read straight from the JSON). prefix is the
+// already-escaped path of the block.
+func deprecatedAttributePatterns(b blockJSON, prefix string) []string {
+	var patterns []string
+	for name, a := range b.Attributes {
+		if a.Deprecated {
+			patterns = append(patterns, prefix+regexp.QuoteMeta(name)+"$")
+		}
+	}
+	for name, bt := range b.BlockTypes {
+		childPrefix := prefix + regexp.QuoteMeta(name) + "\\."
+		switch bt.NestingMode {
+		case "list", "set":
+			childPrefix += "[0-9]+\\."
+		case "map":
+			childPrefix += "[^.]+\\."
+		}
+		patterns = append(patterns, deprecatedAttributePatterns(bt.Block, childPrefix)...)
+	}
+	sort.Strings(patterns)
+	return patterns
+}
+
+// parseDeprecatedAttributes returns, per resource type of provider tfType,
+// the flatmap-key patterns of its deprecated attributes.
+func parseDeprecatedAttributes(data []byte, tfType string) (map[string][]string, error) {
+	var doc schemaJSONDoc
+	if err := json.Unmarshal(data, &doc); err != nil {
+		return nil, fmt.Errorf("parsing providers schema JSON: %w", err)
+	}
+	out := map[string][]string{}
+	for key, ps := range doc.ProviderSchemas {
+		parts := strings.Split(key, "/")
+		if parts[len(parts)-1] != tfType {
+			continue
+		}
+		for name, rs := range ps.ResourceSchemas {
+			if patterns := deprecatedAttributePatterns(rs.Block, "^"); len(patterns) > 0 {
+				out[name] = patterns
+			}
+		}
+		break
+	}
+	return out, nil
 }
 
 // nestedTypeJSON is the schema shape for protocol-6 nested attributes

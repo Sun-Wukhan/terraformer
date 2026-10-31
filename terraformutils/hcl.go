@@ -35,23 +35,32 @@ const safeChars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ012345678
 
 var unsafeChars = regexp.MustCompile(`[^0-9A-Za-z_\-]`)
 
-// make HCL output reproducible by sorting the AST nodes
+// sortHclTree makes HCL output reproducible by ordering the attributes and
+// blocks of an object by key. The sort is stable and compares keys only, so
+// repeated blocks with the same key (e.g. several `access_policy {}` of a
+// TypeList) keep the order the provider returned them in; reordering them, or
+// the elements of a list value, would show up as a change in `terraform plan`.
 func sortHclTree(tree interface{}) {
-	switch t := tree.(type) {
-	case []*ast.ObjectItem:
-		sort.Slice(t, func(i, j int) bool {
-			var bI, bJ bytes.Buffer
-			_, _ = hclPrinter.Fprint(&bI, t[i]), hclPrinter.Fprint(&bJ, t[j])
-			return bI.String() < bJ.String()
-		})
-	case []ast.Node:
-		sort.Slice(t, func(i, j int) bool {
-			var bI, bJ bytes.Buffer
-			_, _ = hclPrinter.Fprint(&bI, t[i]), hclPrinter.Fprint(&bJ, t[j])
-			return bI.String() < bJ.String()
-		})
-	default:
+	items, ok := tree.([]*ast.ObjectItem)
+	if !ok {
+		return
 	}
+	sort.SliceStable(items, func(i, j int) bool {
+		return objectItemKey(items[i]) < objectItemKey(items[j])
+	})
+}
+
+// objectItemKey renders the key path of an object item ("a" or "a b" for a
+// labelled block) for sorting.
+func objectItemKey(item *ast.ObjectItem) string {
+	var b bytes.Buffer
+	for i, k := range item.Keys {
+		if i > 0 {
+			b.WriteByte(' ')
+		}
+		_ = hclPrinter.Fprint(&b, k)
+	}
+	return b.String()
 }
 
 // sanitizer fixes up an invalid HCL AST, as produced by the HCL parser for JSON
@@ -81,9 +90,8 @@ func (v *astSanitizer) visit(n interface{}) {
 		v.visitObjectItem(t)
 	case *ast.LiteralType:
 	case *ast.ListType:
-		if v.sort {
-			sortHclTree(t.List)
-		}
+		// List element order is significant for TypeList attributes; never
+		// reorder values.
 	case *ast.ObjectType:
 		if v.sort {
 			sortHclTree(t.List)
@@ -148,10 +156,6 @@ func (v *astSanitizer) visitObjectItem(o *ast.ObjectItem) {
 					t.Token.Text = hereDoc
 				}
 			}
-		}
-	case *ast.ListType:
-		if v.sort {
-			sortHclTree(t.List)
 		}
 	default:
 	}

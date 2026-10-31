@@ -16,6 +16,7 @@ package azure
 
 import (
 	"context"
+	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/applicationinsights/armapplicationinsights"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
@@ -25,13 +26,12 @@ import (
 // ApplicationInsightsGenerator imports Application Insights components and
 // their child resources via the track-2 armapplicationinsights SDK.
 //
+// Web tests share the Microsoft.Insights/webTests ARM type; the API's kind
+// field ("standard" vs ping/multistep) decides between
+// azurerm_application_insights_standard_web_test and
+// azurerm_application_insights_web_test (see webTestResourceType).
+//
 // Skipped azurerm types in this family:
-//   - azurerm_application_insights_standard_web_test: standard and classic
-//     web tests share the Microsoft.Insights/webTests ARM type and
-//     armapplicationinsights v1.2.0 (API 2020-02-02) exposes no field
-//     distinguishing standard tests (its WebTestKind enum is only
-//     ping/multistep); web tests are enumerated once as
-//     azurerm_application_insights_web_test.
 //   - azurerm_application_insights_workbook_template: no workbook-template
 //     client exists in armapplicationinsights v1.2.0.
 type ApplicationInsightsGenerator struct {
@@ -111,7 +111,12 @@ func (g *ApplicationInsightsGenerator) InitResources() error {
 	if err := g.listWebTests(ctx); err != nil {
 		return err
 	}
-	return g.listWorkbooks(ctx)
+	// The pinned SDK lists workbooks with an API version ARM no longer
+	// accepts in some regions; don't let that drop every other resource.
+	if err := g.listWorkbooks(ctx); err != nil {
+		g.RecordFailure("azurerm_application_insights_workbook", err)
+	}
+	return nil
 }
 
 func (g *ApplicationInsightsGenerator) listAPIKeys(ctx context.Context, refs []appInsightsComponentRef) error {
@@ -192,6 +197,25 @@ func (g *ApplicationInsightsGenerator) listSmartDetectionRules(ctx context.Conte
 	return nil
 }
 
+// webTestResourceType picks the azurerm resource for a web test. The SDK's
+// WebTestKind enum only lists ping/multistep, but the API returns "standard"
+// for standard tests, which only azurerm_application_insights_standard_web_test
+// can represent (the classic resource requires an XML configuration that
+// standard tests do not have).
+func webTestResourceType(item *armapplicationinsights.WebTest) string {
+	kind := ""
+	switch {
+	case item.Properties != nil && item.Properties.WebTestKind != nil:
+		kind = string(*item.Properties.WebTestKind)
+	case item.Kind != nil:
+		kind = string(*item.Kind)
+	}
+	if strings.EqualFold(kind, "standard") {
+		return "azurerm_application_insights_standard_web_test"
+	}
+	return "azurerm_application_insights_web_test"
+}
+
 func (g *ApplicationInsightsGenerator) listWebTests(ctx context.Context) error {
 	client, err := armapplicationinsights.NewWebTestsClient(g.getSubscriptionID(), g.getCredential(), g.armClientOptions())
 	if err != nil {
@@ -201,7 +225,7 @@ func (g *ApplicationInsightsGenerator) listWebTests(ctx context.Context) error {
 		if item.ID == nil || item.Name == nil {
 			return terraformutils.Resource{}, false
 		}
-		return g.simple(*item.ID, *item.Name, "azurerm_application_insights_web_test")
+		return g.simple(*item.ID, *item.Name, webTestResourceType(item))
 	}
 	var resources []terraformutils.Resource
 	if rg := g.getResourceGroup(); rg != "" {

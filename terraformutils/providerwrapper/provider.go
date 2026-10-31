@@ -30,7 +30,8 @@ package providerwrapper //nolint
 //     schema_json.go into the 0.12 providers.GetSchemaResponse type that the
 //     rest of terraformer consumes.
 //   - Per-resource state refresh is done in bulk by the terraformutils package
-//     via generated `import` blocks + `<cli> apply` + `<cli> show -json`.
+//     via generated `import` blocks + `<cli> plan`, a verified import-only
+//     `<cli> apply` of the saved plan, and `<cli> show -json`.
 //
 // The github.com/hashicorp/terraform v0.12.31 module is therefore kept in
 // go.mod as a TYPES-ONLY dependency (configs/configschema, providers). None
@@ -46,7 +47,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -83,6 +86,55 @@ const (
 // successful init. GetProviderVersion serves it without re-running the CLI.
 var providerVersionCache sync.Map // map[string]string
 
+// cliInfo records the driven CLI's version and provider registry host, set by
+// detectCLIVersion, so the generated state can declare a compatible
+// terraform_version and the right provider address.
+var cliInfo struct {
+	sync.Mutex
+	version      string
+	registryHost string
+}
+
+// defaultCLIVersion is declared in generated state when the CLI version could
+// not be detected: the oldest release whose import blocks terraformer needs.
+const defaultCLIVersion = "1.5.0"
+
+// defaultRegistryHost is the provider registry assumed for generated state
+// when the CLI is not OpenTofu.
+const defaultRegistryHost = "registry.terraform.io"
+
+// GetCLIVersion returns the detected terraform/tofu version, or
+// defaultCLIVersion when none was detected.
+func GetCLIVersion() string {
+	cliInfo.Lock()
+	defer cliInfo.Unlock()
+	if cliInfo.version == "" {
+		return defaultCLIVersion
+	}
+	return cliInfo.version
+}
+
+// GetRegistryHost returns the provider registry host of the detected CLI
+// (registry.opentofu.org for tofu, registry.terraform.io otherwise).
+func GetRegistryHost() string {
+	cliInfo.Lock()
+	defer cliInfo.Unlock()
+	if cliInfo.registryHost == "" {
+		return defaultRegistryHost
+	}
+	return cliInfo.registryHost
+}
+
+// GetProviderSource returns the registry source address ("hashicorp/aws")
+// for a terraformer provider name, or "" when the name is unknown.
+func GetProviderSource(providerName string) string {
+	source, _, err := lookupProviderSource(providerName)
+	if err != nil {
+		return ""
+	}
+	return source
+}
+
 type ProviderWrapper struct {
 	providerName string
 	tfType       string // terraform provider type, e.g. "aws"
@@ -90,9 +142,12 @@ type ProviderWrapper struct {
 	cliBin       string // resolved terraform/tofu binary
 	workDir      string // isolated temp working directory
 	schema       *providers.GetSchemaResponse
-	retryCount   int
-	retrySleepMs int
-	verbose      bool
+	// deprecatedAttrs maps resource type -> flatmap-key patterns of its
+	// deprecated attributes (not representable in configschema).
+	deprecatedAttrs map[string][]string
+	retryCount      int
+	retrySleepMs    int
+	verbose         bool
 }
 
 // resolveCLIBin finds the terraform/tofu CLI to drive: the TERRAFORMER_TF_BIN
@@ -132,7 +187,7 @@ func NewProviderWrapper(providerName string, providerConfig cty.Value, verbose b
 		return nil, err
 	}
 	p.cliBin = cliBin
-	p.warnIfOldCLI()
+	p.detectCLIVersion()
 
 	source, tfType, err := lookupProviderSource(providerName)
 	if err != nil {
@@ -176,6 +231,9 @@ func NewProviderWrapper(providerName string, providerConfig cty.Value, verbose b
 		return nil, err
 	}
 	p.schema = schema
+	if p.deprecatedAttrs, err = parseDeprecatedAttributes(schemaOut, tfType); err != nil {
+		return nil, err
+	}
 
 	p.detectProviderVersion()
 
@@ -220,6 +278,69 @@ func (p *ProviderWrapper) GetReadOnlyAttributes(resourceTypes []string) (map[str
 		}
 	}
 	return readOnlyAttributes, nil
+}
+
+// GetRequiredAttributes returns flatmap-key patterns (e.g. `^name$`,
+// `^subnet\.[0-9]+\.address_prefix$`) for every attribute the schema marks
+// Required in resourceType. Required attributes must be emitted even when
+// their value is empty or zero.
+func (p *ProviderWrapper) GetRequiredAttributes(resourceType string) []string {
+	r := p.GetSchema()
+	if r == nil {
+		return nil
+	}
+	rs, ok := r.ResourceTypes[resourceType]
+	if !ok || rs.Block == nil {
+		return nil
+	}
+	return attributePatterns(rs.Block, "^", func(a *configschema.Attribute) bool { return a.Required })
+}
+
+// GetOptionalComputedAttributes returns flatmap-key patterns for every
+// attribute the schema marks both Optional and Computed in resourceType.
+// Leaving such an attribute out of the config makes the provider keep the
+// live value, so a zero value (false, 0, "") can be dropped without causing a
+// diff; emitting it frequently trips ConflictsWith/ExactlyOneOf validation.
+func (p *ProviderWrapper) GetOptionalComputedAttributes(resourceType string) []string {
+	r := p.GetSchema()
+	if r == nil {
+		return nil
+	}
+	rs, ok := r.ResourceTypes[resourceType]
+	if !ok || rs.Block == nil {
+		return nil
+	}
+	return attributePatterns(rs.Block, "^", func(a *configschema.Attribute) bool { return a.Optional && a.Computed })
+}
+
+// GetDeprecatedAttributes returns flatmap-key patterns for every attribute
+// the provider marks deprecated in resourceType. Deprecated attributes are
+// aliases of newer ones and conflict with them, so they must not be emitted.
+func (p *ProviderWrapper) GetDeprecatedAttributes(resourceType string) []string {
+	return p.deprecatedAttrs[resourceType]
+}
+
+// attributePatterns walks block collecting anchored flatmap-key patterns for
+// the attributes matching pred; prefix is the already-escaped path of block.
+func attributePatterns(block *configschema.Block, prefix string, pred func(*configschema.Attribute) bool) []string {
+	var patterns []string
+	for name, attr := range block.Attributes {
+		if pred(attr) {
+			patterns = append(patterns, prefix+regexp.QuoteMeta(name)+"$")
+		}
+	}
+	for name, nested := range block.BlockTypes {
+		childPrefix := prefix + regexp.QuoteMeta(name) + "\\."
+		switch nested.Nesting {
+		case configschema.NestingList, configschema.NestingSet:
+			childPrefix += "[0-9]+\\."
+		case configschema.NestingMap:
+			childPrefix += "[^.]+\\."
+		}
+		patterns = append(patterns, attributePatterns(&nested.Block, childPrefix, pred)...)
+	}
+	sort.Strings(patterns)
+	return patterns
 }
 
 func (p *ProviderWrapper) readObjBlocks(block map[string]*configschema.NestedBlock, readOnlyAttributes []string, parent string) []string {
@@ -352,16 +473,7 @@ func (p *ProviderWrapper) writeProviderTF(config cty.Value) error {
 	f := hclwrite.NewEmptyFile()
 	body := f.Body()
 	providerBlock := body.AppendNewBlock("provider", []string{p.tfType})
-	pBody := providerBlock.Body()
-	wrote := false
-	for name, val := range config.AsValueMap() {
-		if val.IsNull() {
-			continue
-		}
-		pBody.SetAttributeValue(name, val)
-		wrote = true
-	}
-	if !wrote {
+	if !writeConfigBody(providerBlock.Body(), config) {
 		return nil
 	}
 	if err := os.WriteFile(filepath.Join(p.workDir, "provider.tf"), f.Bytes(), 0644); err != nil {
@@ -370,9 +482,37 @@ func (p *ProviderWrapper) writeProviderTF(config cty.Value) error {
 	return nil
 }
 
-// warnIfOldCLI logs a warning when the resolved CLI is older than 1.5, the
-// minimum version supporting the `import` blocks used for bulk refresh.
-func (p *ProviderWrapper) warnIfOldCLI() {
+// writeConfigBody writes the non-null values of an object into body and
+// reports whether anything was written. Object-typed values become nested
+// blocks (e.g. azurerm's required `features {}`), everything else an
+// attribute; an empty object still yields an empty block.
+func writeConfigBody(body *hclwrite.Body, config cty.Value) bool {
+	values := config.AsValueMap()
+	names := make([]string, 0, len(values))
+	for name := range values {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	wrote := false
+	for _, name := range names {
+		val := values[name]
+		if val.IsNull() {
+			continue
+		}
+		if val.Type().IsObjectType() {
+			writeConfigBody(body.AppendNewBlock(name, nil).Body(), val)
+		} else {
+			body.SetAttributeValue(name, val)
+		}
+		wrote = true
+	}
+	return wrote
+}
+
+// detectCLIVersion records the resolved CLI's version and registry host in
+// cliInfo, and logs a warning when it is older than 1.5, the minimum version
+// supporting the `import` blocks used for bulk refresh.
+func (p *ProviderWrapper) detectCLIVersion() {
 	ctx, cancel := context.WithTimeout(context.Background(), cliVersionTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, p.cliBin, "version", "-json")
@@ -389,8 +529,16 @@ func (p *ProviderWrapper) warnIfOldCLI() {
 		return
 	}
 	verStr := v.TerraformVersion
+	host := defaultRegistryHost
 	if verStr == "" {
 		verStr = v.TofuVersion
+		host = "registry.opentofu.org"
+	}
+	if verStr != "" {
+		cliInfo.Lock()
+		cliInfo.version = verStr
+		cliInfo.registryHost = host
+		cliInfo.Unlock()
 	}
 	parts := strings.SplitN(verStr, ".", 3)
 	if len(parts) < 2 {

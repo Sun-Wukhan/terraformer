@@ -17,6 +17,7 @@ package azure
 import (
 	"context"
 	"log"
+	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/eventhub/armeventhub"
 )
@@ -109,10 +110,21 @@ func (az *EventHubGenerator) appendConsumerGroups(namespace *armeventhub.EHNames
 			return err
 		}
 		for _, item := range page.Value {
+			if isDefaultConsumerGroup(item.Name) {
+				continue
+			}
 			az.AppendSimpleResource(*item.ID, *item.Name, "azurerm_eventhub_consumer_group")
 		}
 	}
 	return nil
+}
+
+// isDefaultConsumerGroup reports whether name is the `$Default` consumer
+// group Azure creates in every event hub. It cannot be managed and azurerm
+// rejects the name (it must start with a letter or digit), so importing it
+// only yields invalid configuration.
+func isDefaultConsumerGroup(name *string) bool {
+	return name == nil || strings.EqualFold(*name, "$Default")
 }
 
 func (az *EventHubGenerator) appendAuthorizationRules(namespace *armeventhub.EHNamespace, namespaceRg *ResourceID) error {
@@ -171,6 +183,10 @@ func (az *EventHubGenerator) appendNamespaceChildren(namespace *armeventhub.EHNa
 		for _, item := range page.Value {
 			az.AppendSimpleResource(*item.ID, *item.Name, "azurerm_eventhub_namespace_disaster_recovery_config")
 		}
+	}
+	// Basic namespaces have no schema registry; listing it returns a 400.
+	if namespace.SKU != nil && namespace.SKU.Name != nil && *namespace.SKU.Name == armeventhub.SKUNameBasic {
+		return nil
 	}
 	schemaClient, err := armeventhub.NewSchemaRegistryClient(az.getSubscriptionID(), az.getCredential(), az.armClientOptions())
 	if err != nil {

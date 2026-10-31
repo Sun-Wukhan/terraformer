@@ -17,6 +17,7 @@ package azure
 import (
 	"context"
 	"log"
+	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerinstance/armcontainerinstance"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
@@ -112,6 +113,22 @@ func (g *ContainerGenerator) listRegistryWebhooks(resourceGroupName string, regi
 // listRegistryChildren enumerates the ACR child resources of one registry:
 // agent pools, cache rules, credential sets, scope maps, tasks, tokens and
 // (via the v2 module, the first with that client) connected registries.
+// newScopeMapsClient builds the ACR scope-maps client for g.
+func newScopeMapsClient(g *ContainerGenerator) (*armcontainerregistry.ScopeMapsClient, error) {
+	return armcontainerregistry.NewScopeMapsClient(g.getSubscriptionID(), g.getCredential(), g.armClientOptions())
+}
+
+// isSystemScopeMap reports whether an ACR scope map is one of the registry's
+// built-in `_repositories_*` maps. They are created by Azure, cannot be
+// managed, and azurerm rejects their names (underscores are not allowed), so
+// importing them only produces an invalid configuration.
+func isSystemScopeMap(item *armcontainerregistry.ScopeMap) bool {
+	if item == nil || item.ID == nil || item.Name == nil {
+		return true
+	}
+	return strings.HasPrefix(*item.Name, "_repositories_")
+}
+
 func (g *ContainerGenerator) listRegistryChildren(resourceGroupName string, registryName string) ([]terraformutils.Resource, error) {
 	var resources []terraformutils.Resource
 	ctx := context.Background()
@@ -167,7 +184,7 @@ func (g *ContainerGenerator) listRegistryChildren(resourceGroupName string, regi
 		}
 	}
 
-	scopeMapsClient, err := armcontainerregistry.NewScopeMapsClient(g.getSubscriptionID(), g.getCredential(), g.armClientOptions())
+	scopeMapsClient, err := newScopeMapsClient(g)
 	if err != nil {
 		return nil, err
 	}
@@ -179,6 +196,9 @@ func (g *ContainerGenerator) listRegistryChildren(resourceGroupName string, regi
 			return resources, err
 		}
 		for _, item := range page.Value {
+			if isSystemScopeMap(item) {
+				continue
+			}
 			add(*item.ID, *item.Name, "azurerm_container_registry_scope_map")
 		}
 	}

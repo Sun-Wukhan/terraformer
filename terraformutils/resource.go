@@ -15,6 +15,7 @@
 package terraformutils
 
 import (
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"strings"
@@ -25,8 +26,12 @@ import (
 )
 
 type Resource struct {
-	InstanceInfo      *terraform.InstanceInfo
-	InstanceState     *terraform.InstanceState
+	InstanceInfo  *terraform.InstanceInfo
+	InstanceState *terraform.InstanceState
+	// StateJSON is the typed attribute object the CLI reported for this
+	// resource at refresh (`show -json` values); it is written verbatim into
+	// the generated state file.
+	StateJSON         json.RawMessage                   `json:",omitempty"`
 	Outputs           map[string]*terraform.OutputState `json:",omitempty"`
 	ResourceName      string
 	Provider          string
@@ -151,13 +156,26 @@ func (r *Resource) ConvertTFstate(provider *providerwrapper.ProviderWrapper) err
 	for _, pattern := range r.IgnoreKeys {
 		ignoreKeys = append(ignoreKeys, regexp.MustCompile(pattern))
 	}
+	// Deprecated attributes are aliases that conflict with their replacement.
+	for _, pattern := range provider.GetDeprecatedAttributes(r.InstanceInfo.Type) {
+		ignoreKeys = append(ignoreKeys, regexp.MustCompile(pattern))
+	}
+	dropZeroKeys := []*regexp.Regexp{}
+	for _, pattern := range provider.GetOptionalComputedAttributes(r.InstanceInfo.Type) {
+		dropZeroKeys = append(dropZeroKeys, regexp.MustCompile(pattern))
+	}
 	allowEmptyValues := []*regexp.Regexp{}
 	for _, pattern := range r.AllowEmptyValues {
 		if pattern != "" {
 			allowEmptyValues = append(allowEmptyValues, regexp.MustCompile(pattern))
 		}
 	}
-	parser := NewFlatmapParser(r.InstanceState.Attributes, ignoreKeys, allowEmptyValues)
+	// Required attributes must appear in the generated HCL even when empty
+	// or zero; otherwise the config fails validation.
+	for _, pattern := range provider.GetRequiredAttributes(r.InstanceInfo.Type) {
+		allowEmptyValues = append(allowEmptyValues, regexp.MustCompile(pattern))
+	}
+	parser := NewFlatmapParser(r.InstanceState.Attributes, ignoreKeys, allowEmptyValues).WithDropZeroKeys(dropZeroKeys)
 	schema := provider.GetSchema()
 	impliedType := schema.ResourceTypes[r.InstanceInfo.Type].Block.ImpliedType()
 	return r.ParseTFstate(parser, impliedType)
