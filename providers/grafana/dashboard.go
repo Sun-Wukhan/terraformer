@@ -44,7 +44,15 @@ func (g *DashboardGenerator) createDashboardResources(client *gapi.Client) error
 			return fmt.Errorf("unable to marshal configuration for grafana dashboard %s: %v", dashboard.Title, err)
 		}
 
-		filename := fmt.Sprintf("dashboard-%s.json", dash.Meta.Slug)
+		// The folder attribute must carry the folder UID: that is what
+		// the grafana provider stores in state. The numeric FolderID the
+		// search API also returns plans as a spurious update against
+		// every foldered dashboard (and would target the wrong folder
+		// on apply). Root dashboards keep 0 (the general folder).
+		folderRef := interface{}(dashboard.FolderID)
+		if dashboard.FolderUID != "" {
+			folderRef = dashboard.FolderUID
+		}
 		resource := terraformutils.NewResource(
 			dashboard.UID,
 			dashboard.Title,
@@ -53,13 +61,15 @@ func (g *DashboardGenerator) createDashboardResources(client *gapi.Client) error
 			map[string]string{},
 			[]string{},
 			map[string]interface{}{
-				"config_json": fmt.Sprintf("file(\"data/%s\")", filename),
-				"folder":      dashboard.FolderID,
+				// Inline the dashboard JSON as a heredoc. Storing a
+				// file("data/...") expression here emitted it as a
+				// quoted string, so Terraform passed the literal text
+				// file("...") to the provider as the config JSON and
+				// every plan failed with a JSON parse error.
+				"config_json": fmt.Sprintf("<<JSON\n%s\nJSON", configJSON),
+				"folder":      folderRef,
 			},
 		)
-		resource.DataFiles = map[string][]byte{
-			filename: configJSON,
-		}
 		g.Resources = append(g.Resources, resource)
 	}
 
