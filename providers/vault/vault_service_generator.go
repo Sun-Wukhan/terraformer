@@ -209,32 +209,103 @@ func (g *ServiceGenerator) createPolicyResources() error {
 	return nil
 }
 
+// maxKVWalkDepth bounds the recursive secret discovery so a pathological
+// or cyclic folder layout cannot loop forever.
+const maxKVWalkDepth = 32
+
+// kvMounts returns the kv mounts visible to the token, keyed by mount path
+// (no trailing slash), with each mount's kv version ("1" or "2") taken from
+// the mount options. A mount with no version option is kv-v1.
+func (g *ServiceGenerator) kvMounts() (map[string]string, error) {
+	mounts, err := g.client.Sys().ListMounts()
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]string{}
+	for name, mount := range mounts {
+		if mount.Type != "kv" {
+			continue
+		}
+		version := "1"
+		if mount.Options != nil && mount.Options["version"] == "2" {
+			version = "2"
+		}
+		out[strings.TrimSuffix(name, "/")] = version
+	}
+	return out, nil
+}
+
+// walkKVKeys recursively lists secret keys under listPath, which must end
+// in "/". Keys ending in "/" are folders and are descended into; anything
+// else is a leaf secret. Returned paths are relative to listPath. A path
+// with no keys (or a 404, which the client reports as a nil secret) yields
+// no leaves and no error.
+func (g *ServiceGenerator) walkKVKeys(listPath string, depth int) ([]string, error) {
+	if depth > maxKVWalkDepth {
+		return nil, fmt.Errorf("secret discovery exceeded max depth %d at %s", maxKVWalkDepth, listPath)
+	}
+	s, err := g.client.Logical().List(listPath)
+	if err != nil {
+		return nil, err
+	}
+	if s == nil {
+		return nil, nil
+	}
+	rawKeys, ok := s.Data["keys"]
+	if !ok {
+		return nil, nil
+	}
+	keys, ok := rawKeys.([]interface{})
+	if !ok {
+		return nil, fmt.Errorf("unexpected keys payload at %s", listPath)
+	}
+	var leaves []string
+	for _, raw := range keys {
+		key, ok := raw.(string)
+		if !ok {
+			continue
+		}
+		if strings.HasSuffix(key, "/") {
+			sub, err := g.walkKVKeys(listPath+key, depth+1)
+			if err != nil {
+				return nil, err
+			}
+			for _, leaf := range sub {
+				leaves = append(leaves, key+leaf)
+			}
+			continue
+		}
+		leaves = append(leaves, key)
+	}
+	return leaves, nil
+}
+
 func (g *ServiceGenerator) createGenericSecretResources() error {
-	mounts, err := g.mountsByType()
+	mounts, err := g.kvMounts()
 	if err != nil {
 		return err
 	}
-	for _, mount := range mounts {
-		path := fmt.Sprintf("%s/", mount)
-		s, err := g.client.Logical().List(path)
+	for mount, version := range mounts {
+		// kv-v1 exposes keys directly under the mount; kv-v2 lists them
+		// under metadata/. Either way the resource ID is the logical path
+		// (<mount>/<key>): the vault provider resolves kv-v2 mounts to
+		// their data/ paths itself, and an ID that already contains the
+		// data/ segment makes it report the object as non-existent.
+		listRoot := mount + "/"
+		idPrefix := mount + "/"
+		if version == "2" {
+			listRoot = mount + "/metadata/"
+		}
+		leaves, err := g.walkKVKeys(listRoot, 0)
 		if err != nil {
-			log.Printf("error calling path %s: %s", path, err)
+			log.Printf("error listing secrets under %s: %s", listRoot, err)
 			continue
 		}
-		if s == nil {
-			log.Printf("call to %s returned nil result", path)
-			continue
-		}
-		secrets, ok := s.Data["keys"]
-		if !ok {
-			log.Printf("no keys in call to %s", path)
-			continue
-		}
-		for _, secret := range secrets.([]interface{}) {
+		for _, leaf := range leaves {
 			g.Resources = append(g.Resources,
 				terraformutils.NewSimpleResource(
-					fmt.Sprintf("%s/%s", mount, secret),
-					fmt.Sprintf("%s_%s", mount, secret),
+					idPrefix+leaf,
+					mount+"_"+strings.ReplaceAll(leaf, "/", "_"),
 					"vault_generic_secret",
 					g.ProviderName,
 					[]string{}))
