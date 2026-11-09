@@ -26,6 +26,7 @@ func NewCmdRoot() *cobra.Command {
 		Version:       version,
 	}
 	cmd.AddCommand(newImportCmd())
+	cmd.AddCommand(newWizardCmd())
 	cmd.AddCommand(newPlanCmd())
 	cmd.AddCommand(versionCmd)
 	return cmd
@@ -144,4 +145,64 @@ func providerGenerators() map[string]func() terraformutils.ProviderGenerator {
 		list[providerGen().GetName()] = providerGen
 	}
 	return list
+}
+
+// wizardProviders maps an `import` subcommand name to its generator, for
+// the import wizard in wizard.go. Keys are subcommand names (note: the
+// equinix metal subcommand is "metal"), not Provider.GetName() values,
+// because generated commands must match the CLI exactly.
+//
+// This map deliberately lives in root.go, one entry per line, like
+// providerGenerators above: build/multi-build builds each per-provider
+// binary by moving the other provider_cmd_*.go files away and commenting
+// out the matching new<Provider>Provider lines in this file, so the
+// wizard's registry shrinks to the providers actually compiled into a
+// per-provider binary instead of breaking its build.
+func wizardProviders() map[string]func() terraformutils.ProviderGenerator {
+	return map[string]func() terraformutils.ProviderGenerator{
+		"alicloud":      newAliCloudProvider,
+		"auth0":         newAuth0Provider,
+		"aws":           newAWSProvider,
+		"azure":         newAzureProvider,
+		"azuread":       newAzureADProvider,
+		"azuredevops":   newAzureDevOpsProvider,
+		"cloudflare":    newCloudflareProvider,
+		"commercetools": newCommercetoolsProvider,
+		"datadog":       newDataDogProvider,
+		"digitalocean":  newDigitalOceanProvider,
+		"fastly":        newFastlyProvider,
+		"github":        newGitHubProvider,
+		"gitlab":        newGitLabProvider,
+		"gmailfilter":   newGmailfilterProvider,
+		"google":        newGoogleProvider,
+		"grafana":       newGrafanaProvider,
+		"heroku":        newHerokuProvider,
+		"honeycombio":   newHoneycombioProvider,
+		"ibm":           newIbmProvider,
+		"ionoscloud":    newIonosCloudProvider,
+		"keycloak":      newKeycloakProvider,
+		"kubernetes":    newKubernetesProvider,
+		"launchdarkly":  newLaunchDarklyProvider,
+		"linode":        newLinodeProvider,
+		"logzio":        newLogzioProvider,
+		"mackerel":      newMackerelProvider,
+		"metal":         newEquinixMetalProvider,
+		"mikrotik":      newMikrotikProvider,
+		"myrasec":       newMyrasecProvider,
+		"newrelic":      newNewRelicProvider,
+		"ns1":           newNs1Provider,
+		"octopusdeploy": newOctopusDeployProvider,
+		"okta":          newOktaProvider,
+		"opal":          newOpalProvider,
+		"openstack":     newOpenStackProvider,
+		"opsgenie":      newOpsgenieProvider,
+		"pagerduty":     newPagerDutyProvider,
+		"panos":         newPanosProvider,
+		"rabbitmq":      newRabbitMQProvider,
+		"tencentcloud":  newTencentCloudProvider,
+		"vault":         newVaultProvider,
+		"vultr":         newVultrProvider,
+		"xenorchestra":  newXenorchestraProvider,
+		"yandex":        newYandexProvider,
+	}
 }

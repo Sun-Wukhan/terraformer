@@ -27,6 +27,36 @@ chmod +x terraformer
 Prerequisites: `terraform >= 1.5` or OpenTofu's `tofu` on your `PATH`
 (override with `TERRAFORMER_TF_BIN`).
 
+## Not sure which flags you need? Use the wizard
+
+```bash
+./terraformer wizard
+```
+
+The wizard asks which provider you want, shows that provider's *real*
+list of services to pick from (no guessing service names — they are
+validated before anything runs), asks the few provider-specific
+questions (project, region, resource group, …), checks your local
+prerequisites, and prints the exact command it built. You can run it
+on the spot, copy it, or save it as a script:
+
+```bash
+./terraformer wizard --script import.sh   # also save the command
+```
+
+For scripts and docs, the same flow works without prompts:
+
+```bash
+./terraformer wizard --provider google --resources networks,firewall \
+  --projects my-project --regions global --dry-run
+# → terraformer import google --resources=networks,firewall \
+#     --projects=my-project --regions=global --strict
+```
+
+Secrets are never asked for and never appear on the generated command
+line — the wizard tells you which environment variables to set instead
+(e.g. `VAULT_TOKEN`, `GRAFANA_AUTH`).
+
 ## What's new in the revival
 
 * **Modern provider support** — the provider layer now shells out to a real
