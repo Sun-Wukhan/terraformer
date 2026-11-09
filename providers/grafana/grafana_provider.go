@@ -46,9 +46,12 @@ func (p GrafanaProvider) GetProviderData(arg ...string) map[string]interface{} {
 	return map[string]interface{}{
 		"provider": map[string]interface{}{
 			"grafana": map[string]interface{}{
-				"org_id":               p.orgID,
-				"url":                  p.url,
-				"auth":                 p.auth,
+				"org_id": p.orgID,
+				"url":    p.url,
+				// Deliberately no "auth": the credential must not be
+				// written into generated files. The grafana provider
+				// reads GRAFANA_AUTH from the environment, which the
+				// import itself already required.
 				"tls_key":              p.tlsKey,
 				"tls_cert":             p.tlsCert,
 				"ca_cert":              p.caCert,
