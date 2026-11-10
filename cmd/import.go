@@ -56,6 +56,7 @@ type ImportOptions struct {
 	RetryCount    int
 	RetrySleepMs  int
 	Strict        bool
+	DryRun        bool
 }
 
 const DefaultPathPattern = "{output}/{provider}/{service}/"
@@ -102,6 +103,18 @@ func Import(provider terraformutils.ProviderGenerator, options ImportOptions, ar
 		return err
 	}
 
+	if options.DryRun {
+		// Preview only: enumeration above is read-only, and nothing below
+		// this point may run — no refresh, no state, no output files. The
+		// point is a safe rehearsal: what would be imported, and which
+		// services already fail at discovery time.
+		fmt.Print(dryRunSummary(provider.GetName(), providerMapping.GetResourcesByService(), report.Failures()))
+		if options.Strict && report.HasFailures() {
+			return fmt.Errorf("dry-run finished with %d failure(s) (--strict)", report.FailureCount())
+		}
+		return nil
+	}
+
 	err = terraformutils.RefreshResourcesByProvider(providerMapping, providerWrapper, report)
 	if err != nil {
 		return err
@@ -139,6 +152,59 @@ func Import(provider terraformutils.ProviderGenerator, options ImportOptions, ar
 	}
 
 	return nil
+}
+
+// dryRunSummary renders the --dry-run preview: per service, the resource
+// types and counts enumeration discovered, with each resource's name and
+// import ID, plus any enumeration failures. Output is sorted so previews
+// are stable and diffable.
+func dryRunSummary(providerName string, byService map[string][]terraformutils.Resource, failures []terraformutils.ImportFailure) string {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "Dry run for provider %q: nothing was refreshed and no files were written.\n", providerName)
+	services := make([]string, 0, len(byService))
+	for s := range byService {
+		services = append(services, s)
+	}
+	sort.Strings(services)
+	total := 0
+	for _, service := range services {
+		resources := byService[service]
+		byType := map[string][]terraformutils.Resource{}
+		var types []string
+		for _, r := range resources {
+			typ := ""
+			if r.InstanceInfo != nil {
+				typ = r.InstanceInfo.Type
+			}
+			if _, ok := byType[typ]; !ok {
+				types = append(types, typ)
+			}
+			byType[typ] = append(byType[typ], r)
+		}
+		sort.Strings(types)
+		fmt.Fprintf(&sb, "\n%s (%d resource(s))\n", service, len(resources))
+		for _, typ := range types {
+			group := byType[typ]
+			sort.Slice(group, func(i, j int) bool { return group[i].ResourceName < group[j].ResourceName })
+			fmt.Fprintf(&sb, "  %s (%d)\n", typ, len(group))
+			for _, r := range group {
+				id := ""
+				if r.InstanceState != nil {
+					id = r.InstanceState.ID
+				}
+				fmt.Fprintf(&sb, "    %s (id: %s)\n", r.ResourceName, id)
+			}
+			total += len(group)
+		}
+	}
+	fmt.Fprintf(&sb, "\nTotal: %d resource(s) would be imported.\n", total)
+	if len(failures) > 0 {
+		fmt.Fprintf(&sb, "\n%d failure(s) during discovery:\n", len(failures))
+		for _, f := range failures {
+			fmt.Fprintf(&sb, "  [%s] service=%s type=%s name=%s: %s\n", f.Stage, f.Service, f.ResourceType, f.ResourceName, f.Error)
+		}
+	}
+	return sb.String()
 }
 
 func initOptionsAndWrapper(provider terraformutils.ProviderGenerator, options ImportOptions, args []string) (*providerwrapper.ProviderWrapper, ImportOptions, error) {
@@ -449,4 +515,5 @@ func baseProviderFlags(flag *pflag.FlagSet, options *ImportOptions, sampleRes, s
 	flag.IntVarP(&options.RetryCount, "retry-number", "n", 5, "number of retries to perform when refresh fails")
 	flag.IntVarP(&options.RetrySleepMs, "retry-sleep-ms", "m", 300, "time in ms to sleep between retries")
 	flag.BoolVar(&options.Strict, "strict", false, "exit with an error if any service or resource failed to import")
+	flag.BoolVar(&options.DryRun, "dry-run", false, "preview only: discover resources and print what would be imported, without refreshing state or writing files")
 }
