@@ -15,6 +15,7 @@
 package terraformutils
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -110,6 +111,73 @@ func TestRenderImportConfig(t *testing.T) {
 		t.Fatalf("expected deduped _2 label:\n%s", got)
 	}
 }
+
+func TestBisectBulkImport(t *testing.T) {
+	mkTargets := func(ids ...string) []importTarget {
+		var out []importTarget
+		for _, id := range ids {
+			r := testImportResource(id, "r-"+id, "some_type")
+			out = append(out, importTarget{resource: r, label: "l_" + id, address: "some_type.l_" + id})
+		}
+		return out
+	}
+
+	run := func(targets []importTarget, poisonIDs map[string]bool) (attempts int, applied map[string]bool, poisoned map[string]error) {
+		applied = map[string]bool{}
+		poisoned = map[string]error{}
+		attempt := func(subset []importTarget) error {
+			attempts++
+			for _, tg := range subset {
+				if poisonIDs[tg.resource.InstanceState.ID] {
+					return errPoison
+				}
+			}
+			for _, tg := range subset {
+				applied[tg.address] = true
+			}
+			return nil
+		}
+		bisectBulkImport(targets, attempt, poisoned)
+		return attempts, applied, poisoned
+	}
+
+	t.Run("healthy set takes exactly one attempt", func(t *testing.T) {
+		attempts, applied, poisoned := run(mkTargets("a", "b", "c", "d"), nil)
+		if attempts != 1 || len(applied) != 4 || len(poisoned) != 0 {
+			t.Fatalf("attempts=%d applied=%v poisoned=%v", attempts, applied, poisoned)
+		}
+	})
+
+	t.Run("one poison resource is isolated, neighbours applied", func(t *testing.T) {
+		targets := mkTargets("a", "b", "poison", "c", "d", "e")
+		_, applied, poisoned := run(targets, map[string]bool{"poison": true})
+		if len(poisoned) != 1 || poisoned["some_type.l_poison"] != errPoison {
+			t.Fatalf("poisoned = %v", poisoned)
+		}
+		if len(applied) != 5 {
+			t.Fatalf("applied %d resources, want the 5 healthy ones: %v", len(applied), applied)
+		}
+		if applied["some_type.l_poison"] {
+			t.Fatal("poison resource must never be in an applied subset")
+		}
+	})
+
+	t.Run("all poison degrades to singleton failures", func(t *testing.T) {
+		_, applied, poisoned := run(mkTargets("x", "y", "z"), map[string]bool{"x": true, "y": true, "z": true})
+		if len(applied) != 0 || len(poisoned) != 3 {
+			t.Fatalf("applied=%v poisoned=%v", applied, poisoned)
+		}
+	})
+
+	t.Run("empty set does nothing", func(t *testing.T) {
+		attempts, _, _ := run(nil, nil)
+		if attempts != 0 {
+			t.Fatalf("attempts = %d, want 0", attempts)
+		}
+	})
+}
+
+var errPoison = errors.New("poison resource in subset")
 
 func TestDropUnknownTypes(t *testing.T) {
 	known := testImportResource("/vnet", "vnet", "azurerm_virtual_network")
