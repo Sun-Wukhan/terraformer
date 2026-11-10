@@ -39,6 +39,16 @@ type FlatmapParser struct {
 	// when they are unset, while an explicit zero often conflicts with
 	// another attribute.
 	dropZeroKeys []*regexp.Regexp
+	// droppedZeros records the flatmap path of every attribute whose zero
+	// value was dropped during Parse, so the caller can warn about them
+	// instead of the drop being silent.
+	droppedZeros []string
+}
+
+// DroppedZeros returns the flatmap paths of the attributes dropped during
+// Parse because their value was zero (see dropZeroKeys).
+func (p *FlatmapParser) DroppedZeros() []string {
+	return p.droppedZeros
 }
 
 func NewFlatmapParser(attributes map[string]string, ignoreKeys []*regexp.Regexp, allowEmptyValues []*regexp.Regexp) *FlatmapParser {
@@ -170,13 +180,16 @@ func (p *FlatmapParser) fromFlatmapObject(prefix string, tys map[string]cty.Type
 			return nil, err
 		}
 		switch {
-		case isZeroNumber(value, ty):
-			// A numeric 0 is the SDK's "unset" marker (and often outside the
-			// attribute's valid range), so treat it like an empty value.
-			if !p.isEmptyAllowed(attributeName) {
-				continue
-			}
 		case isZeroPrimitive(value, ty) && p.isZeroDropped(attributeName):
+			// Zero values are dropped only for Optional+Computed
+			// attributes (dropZeroKeys): there, unset and explicit-zero
+			// are indistinguishable and an explicit zero often conflicts
+			// with another attribute. A zero reported for any other
+			// attribute is real data — the CLI refresh builds the state
+			// from the provider's typed values, where unset attributes
+			// are absent rather than zero — so it is kept. Every drop is
+			// recorded for the caller to warn about.
+			p.droppedZeros = append(p.droppedZeros, attributeName)
 			continue
 		case !p.isValueAllowed(value, attributeName):
 			continue

@@ -151,7 +151,11 @@ func (r *Resource) ParseTFstate(parser Flatmapper, impliedType cty.Type) error {
 	return nil
 }
 
-func (r *Resource) ConvertTFstate(provider *providerwrapper.ProviderWrapper) error {
+// ConvertTFstate parses the resource's refreshed flatmap state into the
+// HCL item map. It returns the flatmap paths of any attributes whose zero
+// value was dropped during the parse (Optional+Computed attributes only),
+// so the caller can warn about them instead of the drop being silent.
+func (r *Resource) ConvertTFstate(provider *providerwrapper.ProviderWrapper) ([]string, error) {
 	ignoreKeys := []*regexp.Regexp{}
 	for _, pattern := range r.IgnoreKeys {
 		ignoreKeys = append(ignoreKeys, regexp.MustCompile(pattern))
@@ -178,7 +182,10 @@ func (r *Resource) ConvertTFstate(provider *providerwrapper.ProviderWrapper) err
 	parser := NewFlatmapParser(r.InstanceState.Attributes, ignoreKeys, allowEmptyValues).WithDropZeroKeys(dropZeroKeys)
 	schema := provider.GetSchema()
 	impliedType := schema.ResourceTypes[r.InstanceInfo.Type].Block.ImpliedType()
-	return r.ParseTFstate(parser, impliedType)
+	if err := r.ParseTFstate(parser, impliedType); err != nil {
+		return nil, err
+	}
+	return parser.DroppedZeros(), nil
 }
 
 func (r *Resource) ServiceName() string {

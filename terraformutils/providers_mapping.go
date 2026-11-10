@@ -4,6 +4,7 @@ import (
 	"log"
 	"math/rand"
 	"reflect"
+	"strings"
 	"time"
 
 	"github.com/GoogleCloudPlatform/terraformer/terraformutils/providerwrapper"
@@ -148,11 +149,15 @@ func (p *ProvidersMapping) GetResourcesByService() map[string][]Resource {
 
 func (p *ProvidersMapping) ConvertTFStates(providerWrapper *providerwrapper.ProviderWrapper, report *ImportReport) {
 	for resource := range p.Resources {
-		err := resource.ConvertTFstate(providerWrapper)
+		droppedZeros, err := resource.ConvertTFstate(providerWrapper)
 		if err != nil {
 			log.Printf("failed to convert resources %s because of error %s", resource.InstanceInfo.Id, err)
 			report.RecordFailure(failureForResource(resource,
 				p.providerToService[p.resourceToProvider[resource]], StageConvert, err))
+		}
+		if len(droppedZeros) > 0 {
+			log.Printf("WARN: %s: dropped zero-valued attribute(s) from generated config (Optional+Computed attributes keep the provider's live value when unset): %s",
+				resource.InstanceInfo.Id, strings.Join(droppedZeros, ", "))
 		}
 	}
 
