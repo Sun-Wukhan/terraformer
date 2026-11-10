@@ -123,3 +123,53 @@ func TestFailureForResource(t *testing.T) {
 		t.Fatalf("unexpected nil-resource failure: %+v", f)
 	}
 }
+
+func TestReportReconciliation(t *testing.T) {
+	r := NewImportReport()
+	r.RecordDiscovered("ec2", 5)
+	r.RecordImported("aws_instance", 3)
+	fail := func(name string) ImportFailure {
+		return ImportFailure{Stage: StageRefresh, Service: "ec2", ResourceType: "aws_instance", ResourceName: name, Error: "boom"}
+	}
+	r.RecordFailure(fail("a"))
+	r.RecordFailure(fail("b"))
+	if got := r.UnaccountedCount(); got != 0 {
+		t.Fatalf("5 discovered = 3 imported + 2 failed must reconcile, got %d unaccounted", got)
+	}
+	// A duplicate record for the same resource must not double-count.
+	r.RecordFailure(fail("a"))
+	if got := r.UnaccountedCount(); got != 0 {
+		t.Fatalf("duplicate failure must be deduplicated, got %d unaccounted", got)
+	}
+	// A service-level enumerate failure is excluded: its resources were
+	// never counted as discovered.
+	r.RecordFailure(ImportFailure{Stage: StageEnumerate, Service: "rds", Error: "down"})
+	if got := r.UnaccountedCount(); got != 0 {
+		t.Fatalf("enumerate failure must not affect reconciliation, got %d", got)
+	}
+	// A resource that vanishes with no record is unaccounted.
+	r.RecordDiscovered("ec2", 1)
+	if got := r.UnaccountedCount(); got != 1 {
+		t.Fatalf("want 1 unaccounted, got %d", got)
+	}
+	if got := r.DiscoveredCount(); got != 6 {
+		t.Fatalf("DiscoveredCount = %d, want 6", got)
+	}
+}
+
+func TestClearResourceFailures(t *testing.T) {
+	r := NewImportReport()
+	r.RecordFailure(ImportFailure{Stage: StageRefresh, Service: "vault", ResourceType: "vault_mount", ResourceName: "apps", Error: "conversion blew up"})
+	r.RecordFailure(ImportFailure{Stage: StageConvert, Service: "vault", ResourceType: "vault_mount", ResourceName: "apps", Error: "convert"})
+	r.RecordFailure(ImportFailure{Stage: StageRefresh, Service: "vault", ResourceType: "vault_mount", ResourceName: "sys", Error: "boom"})
+	r.ClearResourceFailures("vault", "vault_mount", "apps")
+	got := r.Failures()
+	if len(got) != 2 {
+		t.Fatalf("want 2 failures after clearing apps' refresh failure, got %+v", got)
+	}
+	for _, f := range got {
+		if f.ResourceName == "apps" && f.Stage == StageRefresh {
+			t.Fatalf("refresh failure for apps should have been cleared: %+v", got)
+		}
+	}
+}
