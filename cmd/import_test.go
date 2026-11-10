@@ -2,10 +2,12 @@ package cmd
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/GoogleCloudPlatform/terraformer/terraformutils"
 	"github.com/GoogleCloudPlatform/terraformer/terraformutils/providerwrapper"
+	"github.com/hashicorp/terraform/terraform"
 	"github.com/zclconf/go-cty/cty"
 )
 
@@ -87,5 +89,58 @@ func TestInitAllServicesResourcesSupportedServiceGetsReport(t *testing.T) {
 	}
 	if reportSeenByService != report {
 		t.Errorf("service did not have the run report attached before InitResources")
+	}
+}
+
+func TestDryRunSummary(t *testing.T) {
+	mk := func(name, typ, id string) terraformutils.Resource {
+		return terraformutils.Resource{
+			ResourceName:  name,
+			InstanceInfo:  &terraform.InstanceInfo{Type: typ},
+			InstanceState: &terraform.InstanceState{ID: id},
+		}
+	}
+	byService := map[string][]terraformutils.Resource{
+		"mount": {
+			mk("tfer--sys", "vault_mount", "sys"),
+			mk("tfer--apps", "vault_mount", "apps"),
+		},
+		"generic_secret": {
+			mk("tfer--apps_prod_config", "vault_generic_secret", "apps/prod/config"),
+		},
+	}
+	failures := []terraformutils.ImportFailure{
+		{Stage: terraformutils.StageEnumerate, Service: "policy", Error: "permission denied"},
+	}
+	out := dryRunSummary("vault", byService, failures)
+
+	for _, want := range []string{
+		`Dry run for provider "vault"`,
+		"generic_secret (1 resource(s))",
+		"mount (2 resource(s))",
+		"vault_mount (2)",
+		"tfer--apps (id: apps)",
+		"tfer--apps_prod_config (id: apps/prod/config)",
+		"Total: 3 resource(s) would be imported.",
+		"1 failure(s) during discovery:",
+		"service=policy",
+		"permission denied",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("summary missing %q:\n%s", want, out)
+		}
+	}
+	// Services and resources are sorted: generic_secret before mount,
+	// tfer--apps before tfer--sys.
+	if strings.Index(out, "generic_secret") > strings.Index(out, "mount (") {
+		t.Errorf("services not sorted:\n%s", out)
+	}
+	if strings.Index(out, "tfer--apps (id") > strings.Index(out, "tfer--sys") {
+		t.Errorf("resources not sorted:\n%s", out)
+	}
+	// No failures: no failure section.
+	out = dryRunSummary("vault", byService, nil)
+	if strings.Contains(out, "failure(s) during discovery") {
+		t.Errorf("unexpected failure section:\n%s", out)
 	}
 }
