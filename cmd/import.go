@@ -103,6 +103,13 @@ func Import(provider terraformutils.ProviderGenerator, options ImportOptions, ar
 		return err
 	}
 
+	// Record what enumeration selected (after filters) so the end-of-run
+	// summary can reconcile discovered = imported + failed and shout
+	// about anything the pipeline drops without a record.
+	for service, resources := range providerMapping.GetResourcesByService() {
+		report.RecordDiscovered(service, len(resources))
+	}
+
 	if options.DryRun {
 		// Preview only: enumeration above is read-only, and nothing below
 		// this point may run — no refresh, no state, no output files. The

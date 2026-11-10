@@ -215,6 +215,7 @@ func bulkImportResources(p *providerwrapper.ProviderWrapper, resources []*Resour
 			break
 		}
 	}
+	singleErrs := map[string]error{}
 	if needFallback {
 		// Rebuild the workdir config for the single imports: import blocks
 		// for everything not yet refreshed, and the generated resource
@@ -260,9 +261,11 @@ func bulkImportResources(p *providerwrapper.ProviderWrapper, resources []*Resour
 			}
 			log.Printf("WARN: resource %s not in state after bulk apply, trying single import", addr)
 			if _, err := p.RunCLI(singleImportTimeout, "import", "-input=false", "-no-color", addr, r.InstanceState.ID); err != nil {
+				// Not recorded here: the final loop below is the single
+				// recording point for every resource that never refreshed,
+				// so one resource can never be counted as two failures.
 				log.Printf("ERROR: single import of %s failed: %v", addr, err)
-				report.RecordFailure(failureForResource(r, serviceOf[r], StageRefresh,
-					fmt.Errorf("single import failed: %w", err)))
+				singleErrs[addr] = err
 				continue
 			}
 		}
@@ -275,11 +278,20 @@ func bulkImportResources(p *providerwrapper.ProviderWrapper, resources []*Resour
 	for addr, r := range addrToResource {
 		if refreshed[addr] {
 			out = append(out, r)
+			// A resource that refreshed may still carry a failure recorded
+			// mid-pipeline (e.g. a state-conversion error during an earlier
+			// bulk pass, before a fallback rescued it). The final outcome
+			// wins: it imported, so it is not a failure.
+			if r.InstanceInfo != nil {
+				report.ClearResourceFailures(serviceOf[r], r.InstanceInfo.Type, r.ResourceName)
+			}
 		} else {
 			log.Printf("ERROR: Unable to refresh resource %s", r.ResourceName)
 			err := fmt.Errorf("unable to refresh resource: not present in state after import")
 			if perr, ok := poisoned[addr]; ok {
 				err = fmt.Errorf("bulk plan failed for this resource alone: %w", perr)
+			} else if serr, ok := singleErrs[addr]; ok {
+				err = fmt.Errorf("single import failed: %w", serr)
 			}
 			report.RecordFailure(failureForResource(r, serviceOf[r], StageRefresh, err))
 		}

@@ -154,6 +154,10 @@ func (p *ProvidersMapping) ConvertTFStates(providerWrapper *providerwrapper.Prov
 			log.Printf("failed to convert resources %s because of error %s", resource.InstanceInfo.Id, err)
 			report.RecordFailure(failureForResource(resource,
 				p.providerToService[p.resourceToProvider[resource]], StageConvert, err))
+			// A resource that failed conversion has no valid HCL item:
+			// keeping it would write a broken block AND count it as
+			// imported. It is a failure, not an import — remove it.
+			delete(p.Resources, resource)
 		}
 		if len(droppedZeros) > 0 {
 			log.Printf("WARN: %s: dropped zero-valued attribute(s) from generated config (Optional+Computed attributes keep the provider's live value when unset): %s",
