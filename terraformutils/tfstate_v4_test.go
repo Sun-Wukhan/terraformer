@@ -104,7 +104,13 @@ func TestFlatmapParserDropsZeroNumbersUnlessRequired(t *testing.T) {
 		"count":                   "3",
 		"code":                    "0",
 	}
-	parser := NewFlatmapParser(attributes, nil, []*regexp.Regexp{regexp.MustCompile(`^priority$`)})
+	// flow_timeout_in_minutes is Optional+Computed in the azurerm schema,
+	// so production wiring (ConvertTFstate) passes it as a drop-zero
+	// pattern: an unset one surfaces as 0, which is outside its valid
+	// range. A plain-Optional zero is real data and is kept (see
+	// TestZeroValueHandling).
+	parser := NewFlatmapParser(attributes, nil, []*regexp.Regexp{regexp.MustCompile(`^priority$`)}).
+		WithDropZeroKeys([]*regexp.Regexp{regexp.MustCompile(`^flow_timeout_in_minutes$`)})
 	result, err := parser.Parse(cty.Object(map[string]cty.Type{
 		"flow_timeout_in_minutes": cty.Number,
 		"priority":                cty.Number,
@@ -115,7 +121,10 @@ func TestFlatmapParserDropsZeroNumbersUnlessRequired(t *testing.T) {
 		t.Fatalf("Parse: %v", err)
 	}
 	if _, ok := result["flow_timeout_in_minutes"]; ok {
-		t.Errorf("optional zero number must be dropped: %v", result)
+		t.Errorf("optional+computed zero number must be dropped: %v", result)
+	}
+	if dropped := parser.DroppedZeros(); len(dropped) != 1 || dropped[0] != "flow_timeout_in_minutes" {
+		t.Errorf("the drop must be recorded: %v", dropped)
 	}
 	if result["priority"] != "0" {
 		t.Errorf("required zero number must be kept: %v", result)
