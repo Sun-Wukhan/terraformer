@@ -64,10 +64,18 @@ const importGeneratedFile = "import_generated.tf"
 //  3. `<cli> show -json` reads the resulting state; each state value is
 //     converted back into the 0.12 terraform.InstanceState model via the
 //     provider schema, exactly as the old code did.
-//  4. Resources still missing from state get one single
+//  4. If the whole-set plan fails, the set is bisected and each half is
+//     retried, recursively, so one resource whose generated block cannot
+//     plan (e.g. a required sensitive argument Terraform cannot generate)
+//     degrades alone instead of failing the whole service. Singleton
+//     failures are the poisoned resources; they are remembered with their
+//     plan error for the report.
+//  5. Resources still missing from state get one single
 //     `<cli> import <addr> <id>` attempt each, followed by a final
-//     `show -json` pass.
-//  5. Resources that never made it into state are recorded in the
+//     `show -json` pass. The config for that fallback is rebuilt from the
+//     generated blocks of every leaf attempt, so a poisoned resource's
+//     neighbours keep the blocks that let the single import work.
+//  6. Resources that never made it into state are recorded in the
 //     ImportReport and dropped, the same graceful degradation the old
 //     per-resource refresh had — but no longer silently.
 
@@ -154,21 +162,51 @@ func bulkImportResources(p *providerwrapper.ProviderWrapper, resources []*Resour
 			fmt.Errorf("skipped: resource has an empty ID")))
 	}
 
-	if err := os.WriteFile(filepath.Join(p.WorkDir(), "import.tf"), []byte(renderImportConfig(targets)), 0644); err != nil {
-		return nil, fmt.Errorf("writing import.tf: %w", err)
-	}
-
-	if err := bulkApplyImportPlan(p); err != nil {
-		// Not fatal: every resource missing from state gets a single
-		// state-only `import` below.
-		log.Printf("WARN: bulk import skipped, falling back to single imports: %v", err)
-	}
-
 	refreshed := map[string]bool{}
-	if err := collectShowState(p, addrToResource, refreshed, report, serviceOf); err != nil {
-		return nil, err
+	poisoned := map[string]error{}
+	leafParts := map[string][]byte{}
+	var fatalErr error
+
+	// attempt runs one bulk plan+apply for a subset. Each attempt starts
+	// from an empty workdir state: the wrapper's state file is internal to
+	// the refresh (the real output state is rebuilt from the returned
+	// resources), and a shared accumulating state would make later subset
+	// plans try to delete earlier subsets' resources — tripping the
+	// import-only guard and defeating the isolation. Refreshed resources
+	// are collected into memory after every successful attempt instead.
+	// After a leaf attempt (a success, or a single resource) it captures
+	// the generated config so the single-import fallback can be rebuilt
+	// from every leaf's blocks.
+	attempt := func(subset []importTarget) error {
+		resetBulkWorkState(p)
+		if err := os.WriteFile(filepath.Join(p.WorkDir(), "import.tf"), []byte(renderImportConfig(subset)), 0644); err != nil {
+			return fmt.Errorf("writing import.tf: %w", err)
+		}
+		err := bulkApplyImportPlan(p)
+		if err == nil {
+			// A show failure after a successful apply is global, not a
+			// per-resource problem: don't bisect on it, fail the refresh.
+			if cerr := collectShowState(p, addrToResource, refreshed, report, serviceOf); cerr != nil && fatalErr == nil {
+				fatalErr = cerr
+			}
+		}
+		if err == nil || len(subset) == 1 {
+			if gen, rerr := os.ReadFile(filepath.Join(p.WorkDir(), importGeneratedFile)); rerr == nil {
+				for _, t := range subset {
+					leafParts[t.address] = gen
+				}
+			}
+		}
+		return err
 	}
 
+	bisectBulkImport(targets, attempt, poisoned)
+	if fatalErr != nil {
+		return nil, fatalErr
+	}
+	for addr, err := range poisoned {
+		log.Printf("WARN: bulk import isolated %s as un-plannable, it gets a single-import attempt below: %v", addr, err)
+	}
 	// Fallback: one single `import` per resource still missing from state.
 	needFallback := false
 	for addr := range addrToResource {
@@ -178,6 +216,44 @@ func bulkImportResources(p *providerwrapper.ProviderWrapper, resources []*Resour
 		}
 	}
 	if needFallback {
+		// Rebuild the workdir config for the single imports: import blocks
+		// for everything not yet refreshed, and the generated resource
+		// blocks captured from the leaf attempts (with no bisection that is
+		// simply the one full attempt's generated file, as before). The
+		// fallback starts from an empty state; its imports are collected
+		// by the collectShowState call after the loop.
+		resetBulkWorkState(p)
+		var missing []importTarget
+		for _, t := range targets {
+			if !refreshed[t.address] {
+				missing = append(missing, t)
+			}
+		}
+		if err := os.WriteFile(filepath.Join(p.WorkDir(), "import.tf"), []byte(renderImportConfig(missing)), 0644); err != nil {
+			return nil, fmt.Errorf("writing import.tf: %w", err)
+		}
+		var combined strings.Builder
+		seenPart := map[*byte]bool{}
+		for _, t := range targets {
+			part, ok := leafParts[t.address]
+			if !ok || len(part) == 0 {
+				continue
+			}
+			// Several targets of one leaf share the same backing array;
+			// write each distinct part once.
+			key := &part[0]
+			if seenPart[key] {
+				continue
+			}
+			seenPart[key] = true
+			combined.Write(part)
+			combined.WriteString("\n")
+		}
+		if combined.Len() > 0 {
+			if err := os.WriteFile(filepath.Join(p.WorkDir(), importGeneratedFile), []byte(combined.String()), 0644); err != nil {
+				return nil, fmt.Errorf("writing %s: %w", importGeneratedFile, err)
+			}
+		}
 		for addr, r := range addrToResource {
 			if refreshed[addr] {
 				continue
@@ -201,11 +277,47 @@ func bulkImportResources(p *providerwrapper.ProviderWrapper, resources []*Resour
 			out = append(out, r)
 		} else {
 			log.Printf("ERROR: Unable to refresh resource %s", r.ResourceName)
-			report.RecordFailure(failureForResource(r, serviceOf[r], StageRefresh,
-				fmt.Errorf("unable to refresh resource: not present in state after import")))
+			err := fmt.Errorf("unable to refresh resource: not present in state after import")
+			if perr, ok := poisoned[addr]; ok {
+				err = fmt.Errorf("bulk plan failed for this resource alone: %w", perr)
+			}
+			report.RecordFailure(failureForResource(r, serviceOf[r], StageRefresh, err))
 		}
 	}
 	return out, nil
+}
+
+// resetBulkWorkState removes the wrapper workdir's terraform state and
+// saved plan so the next bulk attempt or fallback pass starts empty. The
+// workdir state is internal to the refresh — output state files are
+// rebuilt from the returned resources — so discarding it between attempts
+// loses nothing and keeps subset attempts independent of each other.
+func resetBulkWorkState(p *providerwrapper.ProviderWrapper) {
+	for _, name := range []string{"terraform.tfstate", "terraform.tfstate.backup", importPlanFile} {
+		if err := os.Remove(filepath.Join(p.WorkDir(), name)); err != nil && !os.IsNotExist(err) {
+			log.Printf("WARN: removing stale %s: %v", name, err)
+		}
+	}
+}
+
+// bisectBulkImport applies the bulk import to targets, splitting the set
+// and retrying each half whenever an attempt fails, until every resource
+// has either been applied as part of a successful subset or isolated as a
+// singleton failure. Singleton failures are recorded in poisoned with the
+// attempt's error. attempt is called exactly once for a fully healthy set.
+func bisectBulkImport(targets []importTarget, attempt func(subset []importTarget) error, poisoned map[string]error) {
+	if len(targets) == 0 {
+		return
+	}
+	if err := attempt(targets); err == nil {
+		return
+	} else if len(targets) == 1 {
+		poisoned[targets[0].address] = err
+		return
+	}
+	mid := len(targets) / 2
+	bisectBulkImport(targets[:mid], attempt, poisoned)
+	bisectBulkImport(targets[mid:], attempt, poisoned)
 }
 
 // dropUnknownTypes removes resources whose type the installed provider does
