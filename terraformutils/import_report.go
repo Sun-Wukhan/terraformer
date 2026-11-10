@@ -51,13 +51,86 @@ type ImportFailure struct {
 // All methods are safe to call on a nil *ImportReport (they no-op), so
 // callers may pass nil to disable reporting.
 type ImportReport struct {
-	mu       sync.Mutex
-	imported map[string]int
-	failures []ImportFailure
+	mu         sync.Mutex
+	imported   map[string]int
+	discovered map[string]int
+	failures   []ImportFailure
 }
 
 func NewImportReport() *ImportReport {
-	return &ImportReport{imported: map[string]int{}}
+	return &ImportReport{imported: map[string]int{}, discovered: map[string]int{}}
+}
+
+// RecordDiscovered adds count resources that enumeration selected for
+// import in the given service (after filters). Together with the imported
+// count and the per-resource failures it forms the reconciliation the
+// summary checks: discovered should equal imported + failed, and any gap
+// means a resource vanished somewhere in the pipeline without a record.
+func (r *ImportReport) RecordDiscovered(service string, count int) {
+	if r == nil || count <= 0 {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.discovered == nil {
+		r.discovered = map[string]int{}
+	}
+	r.discovered[service] += count
+}
+
+// DiscoveredCount is the total number of resources selected for import.
+func (r *ImportReport) DiscoveredCount() int {
+	if r == nil {
+		return 0
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	total := 0
+	for _, n := range r.discovered {
+		total += n
+	}
+	return total
+}
+
+// ClearResourceFailures removes refresh-stage failures recorded for one
+// resource. A resource can collect a failure mid-pipeline (e.g. its state
+// conversion failed during a bulk pass) and still be imported by a later
+// fallback; the final outcome is what the report must show.
+func (r *ImportReport) ClearResourceFailures(service, resourceType, resourceName string) {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	kept := r.failures[:0]
+	for _, f := range r.failures {
+		if f.Stage == StageRefresh && f.Service == service && f.ResourceType == resourceType && f.ResourceName == resourceName {
+			continue
+		}
+		kept = append(kept, f)
+	}
+	r.failures = kept
+}
+
+// UnaccountedCount reconciles the run: resources that were discovered but
+// are neither imported nor recorded as failed. Zero is the only healthy
+// value; anything else means the pipeline dropped resources silently
+// (a cleanup hook, a mapping rebuild) and the summary says so loudly.
+// Failures are deduplicated by resource identity, and service-level
+// enumerate failures are excluded — their resources were never counted
+// as discovered.
+func (r *ImportReport) UnaccountedCount() int {
+	if r == nil {
+		return 0
+	}
+	failedResources := map[string]bool{}
+	for _, f := range r.Failures() {
+		if f.Stage != StageRefresh && f.Stage != StageConvert {
+			continue
+		}
+		failedResources[f.Service+"|"+f.ResourceType+"|"+f.ResourceName+"|"+f.ResourceID] = true
+	}
+	return r.DiscoveredCount() - r.ImportedCount() - len(failedResources)
 }
 
 // failureForResource builds an ImportFailure describing resource r at the
@@ -176,13 +249,24 @@ func (r *ImportReport) groupedFailures() []failureGroup {
 
 // PrintSummary logs the end-of-run summary: totals plus one line per
 // distinct failure (with a repeat count), so a partial import can no
-// longer pass unnoticed in the output.
+// longer pass unnoticed in the output. When discovery counts were
+// recorded it also reconciles them against imported + failed and warns
+// about any resource the pipeline dropped without a record.
 func (r *ImportReport) PrintSummary(providerName string) {
 	if r == nil {
 		return
 	}
 	log.Printf("%s import summary: %d resource(s) imported, %d failure(s)",
 		providerName, r.ImportedCount(), r.FailureCount())
+	if r.DiscoveredCount() > 0 {
+		if un := r.UnaccountedCount(); un != 0 {
+			log.Printf("  WARN: accounting mismatch: %d discovered, %d imported, %d unaccounted — resource(s) were dropped without a recorded failure",
+				r.DiscoveredCount(), r.ImportedCount(), un)
+		} else {
+			log.Printf("  accounting: %d discovered = %d imported + %d failed, fully reconciled",
+				r.DiscoveredCount(), r.ImportedCount(), r.DiscoveredCount()-r.ImportedCount())
+		}
+	}
 	for _, g := range r.groupedFailures() {
 		if g.count > 1 {
 			log.Printf("  FAILED x%d %s", g.count, g.key)
@@ -194,12 +278,13 @@ func (r *ImportReport) PrintSummary(providerName string) {
 
 // reportFile is the on-disk shape of terraformer-failures.json.
 type reportFile struct {
-	GeneratedAt    time.Time       `json:"generated_at"`
-	Provider       string          `json:"provider"`
-	ImportedTotal  int             `json:"imported_total"`
-	ImportedByType map[string]int  `json:"imported_by_type"`
-	FailureCount   int             `json:"failure_count"`
-	Failures       []ImportFailure `json:"failures"`
+	GeneratedAt     time.Time       `json:"generated_at"`
+	Provider        string          `json:"provider"`
+	DiscoveredTotal int             `json:"discovered_total"`
+	ImportedTotal   int             `json:"imported_total"`
+	ImportedByType  map[string]int  `json:"imported_by_type"`
+	FailureCount    int             `json:"failure_count"`
+	Failures        []ImportFailure `json:"failures"`
 }
 
 // WriteFailuresJSON writes the machine-readable failure report to path
@@ -210,12 +295,13 @@ func (r *ImportReport) WriteFailuresJSON(path, providerName string) error {
 		return nil
 	}
 	doc := reportFile{
-		GeneratedAt:    time.Now().UTC(),
-		Provider:       providerName,
-		ImportedTotal:  r.ImportedCount(),
-		ImportedByType: r.ImportedByType(),
-		FailureCount:   r.FailureCount(),
-		Failures:       r.Failures(),
+		GeneratedAt:     time.Now().UTC(),
+		Provider:        providerName,
+		DiscoveredTotal: r.DiscoveredCount(),
+		ImportedTotal:   r.ImportedCount(),
+		ImportedByType:  r.ImportedByType(),
+		FailureCount:    r.FailureCount(),
+		Failures:        r.Failures(),
 	}
 	data, err := json.MarshalIndent(doc, "", "  ")
 	if err != nil {
