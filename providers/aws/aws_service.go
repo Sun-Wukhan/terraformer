@@ -36,8 +36,22 @@ var awsVariable = regexp.MustCompile(`(\${[0-9A-Za-z:]+})`)
 
 var configCache *aws.Config
 
+// configCacheKey identifies the (region, profile) the cached config was
+// built for. A single `terraformer import aws` run imports global
+// services first (region "aws-global") and regional services afterwards
+// in the same process; without the key, regional generators would reuse
+// the global pass's config and query the wrong region, silently finding
+// nothing.
+var configCacheKey string
+
+func (s *AWSService) cacheKey() string {
+	region, _ := s.GetArgs()["region"].(string)
+	profile, _ := s.GetArgs()["profile"].(string)
+	return region + "|" + profile
+}
+
 func (s *AWSService) generateConfig() (aws.Config, error) {
-	if configCache != nil {
+	if configCache != nil && configCacheKey == s.cacheKey() {
 		return *configCache, nil
 	}
 
@@ -67,6 +81,7 @@ func (s *AWSService) generateConfig() (aws.Config, error) {
 		}
 	}
 	configCache = &baseConfig
+	configCacheKey = s.cacheKey()
 	return baseConfig, nil
 }
 
