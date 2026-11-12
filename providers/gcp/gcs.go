@@ -18,7 +18,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"strconv"
 
 	"github.com/GoogleCloudPlatform/terraformer/terraformutils"
 
@@ -52,31 +51,15 @@ func (g *GcsGenerator) createBucketsResources(ctx context.Context, gcsService *s
 				GcsAllowEmptyValues,
 				GcsAdditionalFields,
 			))
-			resources = append(resources, terraformutils.NewResource(
-				bucket.Name,
-				bucket.Name,
-				"google_storage_bucket_acl",
-				g.ProviderName,
-				map[string]string{
-					"bucket":        bucket.Name,
-					"role_entity.#": strconv.Itoa(len(bucket.Acl)),
-				},
-				GcsAllowEmptyValues,
-				GcsAdditionalFields,
-			))
-			resources = append(resources, terraformutils.NewResource(
-				bucket.Name,
-				bucket.Name,
-				"google_storage_default_object_acl",
-				g.ProviderName,
-				map[string]string{
-					"bucket":        bucket.Name,
-					"role_entity.#": strconv.Itoa(len(bucket.Acl)),
-				},
-				GcsAllowEmptyValues,
-				GcsAdditionalFields,
-			))
-
+			// The whole-bucket ACL resources (google_storage_bucket_acl
+			// and google_storage_default_object_acl) are deliberately not
+			// emitted: the google provider has no importer for them
+			// (verified against provider v8.11), so every bucket produced
+			// two guaranteed import failures. The same ACL data is still
+			// imported per entity via the
+			// google_storage_bucket_access_control and
+			// google_storage_default_object_access_control resources in
+			// the storage depth pass, which do support import.
 			resources = append(resources, terraformutils.NewResource(
 				bucket.Name,
 				bucket.Name,

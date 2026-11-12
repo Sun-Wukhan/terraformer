@@ -90,7 +90,6 @@ func TestStorageDepthGenerator(t *testing.T) {
 		"google_storage_managed_folder":                           {"bkt1/mf1/"},
 		"google_storage_managed_folder_iam":                       {"bkt1/mf1/"},
 		"google_storage_bucket_object":                            {"bkt1/obj1"},
-		"google_storage_object_acl":                               {"bkt1/obj1"},
 		"google_storage_object_access_control":                    {"bkt1/obj1/user-a@example.com"},
 		"google_storage_hmac_key":                                 {proj + "/hmacKeys/GOOG123"},
 		"google_storage_batch_operations_job":                     {proj + "/locations/global/jobs/job1"},
