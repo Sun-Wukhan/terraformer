@@ -706,7 +706,6 @@ List of supported GCP services:
     * `google_storage_batch_operations_job`
     * `google_storage_bucket`
     * `google_storage_bucket_access_control`
-    * `google_storage_bucket_acl`
     * `google_storage_bucket_iam_binding`
     * `google_storage_bucket_iam_member`
     * `google_storage_bucket_iam_policy`
@@ -716,7 +715,6 @@ List of supported GCP services:
     * `google_storage_control_project_feature_config`
     * `google_storage_control_project_intelligence_config`
     * `google_storage_default_object_access_control`
-    * `google_storage_default_object_acl`
     * `google_storage_folder`
     * `google_storage_ftp_server`
     * `google_storage_ftp_user`
@@ -725,7 +723,6 @@ List of supported GCP services:
     * `google_storage_managed_folder_iam`
     * `google_storage_notification`
     * `google_storage_object_access_control`
-    * `google_storage_object_acl`
 *   `gemini`
     * `google_gemini_code_repository_index`
     * `google_gemini_code_tools_setting`
@@ -1492,7 +1489,7 @@ Your `tf` and `tfstate` files are written by default to
 ### Known limits — not importable
 
 Terraformer's GCP coverage is complete for every google provider resource type that can be
-discovered by enumeration. The 180 types below are the entire remaining gap: each is provably
+discovered by enumeration. The 183 types below are the entire remaining gap: each is provably
 not importable by enumeration, for the reason given. The same reasons are documented in the
 generator source files under `providers/gcp/`.
 
@@ -1667,6 +1664,9 @@ generator source files under `providers/gcp/`.
 * `google_service_usage_consumer_quota_override` — Overrides exist only under fully-qualified metric/limit parents; serviceusage/v1 has no project- or service-level list call.
 * `google_service_usage_v2_consumer_policy` — Per-service get-only in v2; there is no list endpoint and no v2 client.
 * `google_sql_provision_script` — Not an API object: the provider executes the script text through the Data API at apply time; nothing is stored or listable.
+* `google_storage_bucket_acl` — The provider has no importer for the whole-bucket ACL resource (verified against provider v8.11; import fails with "doesn't support import"). The bucket's ACL entries are imported per entity as `google_storage_bucket_access_control` instead.
+* `google_storage_default_object_acl` — The provider has no importer for the whole-bucket default-object ACL resource (verified against provider v8.11). The entries are imported per entity as `google_storage_default_object_access_control` instead.
+* `google_storage_object_acl` — The provider has no importer for the whole-object ACL resource (verified against provider v8.11). The entries are imported per entity as `google_storage_object_access_control` instead.
 * `google_tags_location_tag_binding` — Location bindings list only per-location through regional CRM endpoints; the pinned CRM v3 client exposes only the global TagBindings list and no location enumeration.
 * `google_vertex_ai_agent_anomaly_detection_scope` — No list/get collection exists in aiplatform v1 or v1beta1.
 * `google_vertex_ai_endpoint_with_model_garden_deployment` — Duplicate over the same endpoints collection that `google_vertex_ai_endpoint` already enumerates.

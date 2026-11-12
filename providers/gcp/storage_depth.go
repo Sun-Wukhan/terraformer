@@ -186,9 +186,12 @@ func (g *GcsGenerator) storageBucketDepth(ctx context.Context, storageService *s
 	g.storageBucketObjects(ctx, storageService, bucket)
 }
 
-// storageBucketObjects enumerates a bucket's objects, each object's
-// ACL entries, and the whole-object ACL resource per object that has
-// ACL entries.
+// storageBucketObjects enumerates a bucket's objects and each
+// object's ACL entries. The whole-object ACL resource
+// (google_storage_object_acl) is deliberately not emitted: the google
+// provider has no importer for it (verified against provider v8.11);
+// the per-entity google_storage_object_access_control resources carry
+// the same ACL data in importable form.
 func (g *GcsGenerator) storageBucketObjects(ctx context.Context, storageService *storagev1.Service, bucket string) {
 	objectsCall := storageService.Objects.List(bucket)
 	if err := objectsCall.Pages(ctx, func(page *storagev1.Objects) error {
@@ -203,13 +206,6 @@ func (g *GcsGenerator) storageBucketObjects(ctx context.Context, storageService 
 			if err != nil {
 				log.Println(err)
 				continue
-			}
-			if len(acls.Items) > 0 {
-				g.Resources = append(g.Resources, g.newStorageDepthResource(
-					objectID,
-					"google_storage_object_acl",
-					map[string]string{"bucket": bucket, "object": object.Name},
-				))
 			}
 			for _, acl := range acls.Items {
 				g.Resources = append(g.Resources, g.newStorageDepthResource(
