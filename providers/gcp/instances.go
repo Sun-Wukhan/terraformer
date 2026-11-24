@@ -55,6 +55,11 @@ func (g InstancesGenerator) createResources(ctx context.Context, instancesList *
 				instancesAdditionalFields,
 			)
 			resource.IgnoreKeys = append(resource.IgnoreKeys, "^boot_disk.[0-9].initialize_params\\.(.*)")
+			// The provider reports vlan=0 for NICs that have no VLAN
+			// (the normal case), but 0 is outside the attribute's valid
+			// range (2-255), so emitting it makes the generated config
+			// fail provider validation. Drop it the same way.
+			resource.IgnoreKeys = append(resource.IgnoreKeys, "^network_interface\\.[0-9]+\\.vlan$")
 			resources = append(resources, resource)
 		}
 		return nil
