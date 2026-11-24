@@ -42,6 +42,7 @@ type wizardConfig struct {
 	Strict        bool
 	Verbose       bool
 	Compact       bool
+	Backend       backendConfig
 }
 
 // The provider registry (wizardProviders) lives in root.go — see the
@@ -206,7 +207,7 @@ func (c wizardConfig) Validate() error {
 			return fmt.Errorf("azure imports need --resource-group (use * for all resource groups in the subscription)")
 		}
 	}
-	return nil
+	return c.Backend.Validate()
 }
 
 // NextSteps are the commands to run after a successful import. The plan
@@ -393,7 +394,57 @@ func (w *wizardRunner) runInteractive() error {
 	w.cfg.PathOutput = w.ask("Output folder", DefaultPathOutput)
 	w.cfg.Strict = w.askYesNo("Fail loudly if anything fails to import (--strict, recommended)", true)
 	w.cfg.Verbose = w.askYesNo("Verbose logging", false)
+
+	// 5. Where the state should live afterwards (default: local files)
+	w.askBackend()
 	return w.cfg.Validate()
+}
+
+// askBackend offers the remote-state backends. Local files are the
+// default; a remote choice only adds a post-import migration step —
+// the import itself is unchanged, and no credential is ever asked for.
+func (w *wizardRunner) askBackend() {
+	kinds := backendKinds()
+	w.printf("\nWhere should the imported state live afterwards?\n")
+	for i, k := range kinds {
+		w.printf("  %d. %s\n", i+1, k)
+	}
+	for {
+		raw := w.ask("Backend (name or number)", "local")
+		if n, err := strconv.Atoi(raw); err == nil && n >= 1 && n <= len(kinds) {
+			raw = kinds[n-1]
+		}
+		valid := false
+		for _, k := range kinds {
+			if raw == k {
+				valid = true
+			}
+		}
+		if valid {
+			w.cfg.Backend.Kind = raw
+			break
+		}
+		w.printf("  %q isn't a backend — pick one from the list.\n", raw)
+	}
+	switch w.cfg.Backend.Kind {
+	case "hcp":
+		w.cfg.Backend.Organization = w.ask("HCP Terraform organization", "")
+		w.cfg.Backend.WorkspacePrefix = w.ask("Workspace name prefix", "terraformer")
+		w.printf("  One workspace per service directory will be created in that organization.\n")
+	case "gcs":
+		w.cfg.Backend.GCSBucket = w.ask("GCS bucket for state", "")
+		w.cfg.Backend.GCSPrefix = w.ask("State prefix inside the bucket", "terraformer")
+	case "s3":
+		w.cfg.Backend.S3Bucket = w.ask("S3 bucket for state", "")
+		w.cfg.Backend.S3Region = w.ask("Bucket region, e.g. us-east-1", "")
+		w.cfg.Backend.S3KeyPrefix = w.ask("State key prefix", "terraformer")
+		w.cfg.Backend.S3DynamoDBTable = w.ask("DynamoDB table for state locking (blank for none)", "")
+	case "http":
+		w.cfg.Backend.HTTPAddress = w.ask("HTTP backend base address", "")
+		w.cfg.Backend.HTTPLockAddress = w.ask("Lock address (blank to skip locking)", "")
+		w.cfg.Backend.HTTPUnlockAddres = w.ask("Unlock address (blank to skip locking)", "")
+		w.cfg.Backend.HTTPUsername = w.ask("Username (blank for none; password comes from TF_HTTP_PASSWORD)", "")
+	}
 }
 
 // checkPrereqs reports (but does not block on) missing local tools and
@@ -425,14 +476,26 @@ func (w *wizardRunner) printSummary() {
 	for _, s := range w.cfg.NextSteps() {
 		w.printf("  %s\n", s)
 	}
+	if notes := w.cfg.BackendNotes(); len(notes) > 0 {
+		w.printf("\nRemote state (%s):\n", w.cfg.Backend.Kind)
+		for _, n := range notes {
+			w.printf("  %s\n", n)
+		}
+		w.printf("  The migration step is included when you save a script with --script.\n")
+	}
 }
 
 func newWizardCmd() *cobra.Command {
 	var (
-		flagProvider, flagResources, flagProjects, flagRegions string
-		flagProfile, flagResourceGroup, flagVaultAddress       string
-		flagOutput, flagScript                                 string
-		flagDryRun, flagYes, flagStrict                        bool
+		flagProvider, flagResources, flagProjects, flagRegions  string
+		flagProfile, flagResourceGroup, flagVaultAddress        string
+		flagOutput, flagScript                                  string
+		flagDryRun, flagYes, flagStrict                         bool
+		flagBackend, flagBackendOrg, flagBackendWsPrefix        string
+		flagBackendBucket, flagBackendPrefix, flagBackendRegion string
+		flagBackendKeyPrefix, flagBackendDynamoDB               string
+		flagBackendAddress, flagBackendLock, flagBackendUnlock  string
+		flagBackendUsername                                     string
 	)
 	cmd := &cobra.Command{
 		Use:   "wizard",
@@ -452,6 +515,21 @@ command without prompts (handy for scripts and docs).`,
 				PathOutput:    flagOutput,
 				Strict:        flagStrict,
 				Connect:       true,
+				Backend: backendConfig{
+					Kind:             flagBackend,
+					Organization:     flagBackendOrg,
+					WorkspacePrefix:  flagBackendWsPrefix,
+					GCSBucket:        flagBackendBucket,
+					GCSPrefix:        flagBackendPrefix,
+					S3Bucket:         flagBackendBucket,
+					S3Region:         flagBackendRegion,
+					S3KeyPrefix:      flagBackendKeyPrefix,
+					S3DynamoDBTable:  flagBackendDynamoDB,
+					HTTPAddress:      flagBackendAddress,
+					HTTPLockAddress:  flagBackendLock,
+					HTTPUnlockAddres: flagBackendUnlock,
+					HTTPUsername:     flagBackendUsername,
+				},
 			}
 			if flagResources != "" {
 				cfg.Resources = splitCSV(flagResources)
@@ -487,6 +565,9 @@ command without prompts (handy for scripts and docs).`,
 
 			if flagScript != "" {
 				script := "#!/bin/sh\n# Generated by: terraformer wizard\nset -e\n" + w.cfg.ShellCommand() + "\n"
+				for _, line := range w.cfg.BackendScriptLines() {
+					script += line + "\n"
+				}
 				if err := os.WriteFile(flagScript, []byte(script), 0o755); err != nil {
 					return err
 				}
@@ -520,6 +601,18 @@ command without prompts (handy for scripts and docs).`,
 	cmd.Flags().StringVar(&flagVaultAddress, "address", "", "vault: server address")
 	cmd.Flags().StringVar(&flagOutput, "path-output", DefaultPathOutput, "output folder")
 	cmd.Flags().StringVar(&flagScript, "script", "", "also save the command as an executable shell script at this path")
+	cmd.Flags().StringVar(&flagBackend, "backend", "local", "where state lives after import: local, hcp, gcs, s3, http")
+	cmd.Flags().StringVar(&flagBackendOrg, "backend-org", "", "hcp: HCP Terraform organization")
+	cmd.Flags().StringVar(&flagBackendWsPrefix, "backend-workspace-prefix", "", "hcp: workspace name prefix (default terraformer)")
+	cmd.Flags().StringVar(&flagBackendBucket, "backend-bucket", "", "gcs/s3: bucket that will hold state")
+	cmd.Flags().StringVar(&flagBackendPrefix, "backend-prefix", "", "gcs: state prefix inside the bucket (default terraformer)")
+	cmd.Flags().StringVar(&flagBackendRegion, "backend-region", "", "s3: bucket region")
+	cmd.Flags().StringVar(&flagBackendKeyPrefix, "backend-key-prefix", "", "s3: state key prefix (default terraformer)")
+	cmd.Flags().StringVar(&flagBackendDynamoDB, "backend-dynamodb-table", "", "s3: DynamoDB table for state locking")
+	cmd.Flags().StringVar(&flagBackendAddress, "backend-address", "", "http: state endpoint base URL")
+	cmd.Flags().StringVar(&flagBackendLock, "backend-lock-address", "", "http: lock endpoint base URL")
+	cmd.Flags().StringVar(&flagBackendUnlock, "backend-unlock-address", "", "http: unlock endpoint base URL")
+	cmd.Flags().StringVar(&flagBackendUsername, "backend-username", "", "http: username (password comes from TF_HTTP_PASSWORD)")
 	cmd.Flags().BoolVar(&flagDryRun, "dry-run", false, "validate and print the command, never run it")
 	cmd.Flags().BoolVar(&flagYes, "yes", false, "run the import without asking")
 	cmd.Flags().BoolVar(&flagStrict, "strict", true, "fail loudly if anything fails to import")
