@@ -393,7 +393,10 @@ func printService(provider terraformutils.ProviderGenerator, serviceName string,
 		} else {
 			log.Println(provider.GetName() + " save tfstate for " + serviceName)
 		}
-		if err := os.WriteFile(path+"/terraform.tfstate", tfStateFile, os.ModePerm); err != nil {
+		// State routinely contains secrets (database passwords, Vault
+		// secret values, provider credentials). Never rely on the
+		// process umask: the file is owner-only, always.
+		if err := os.WriteFile(path+"/terraform.tfstate", tfStateFile, 0o600); err != nil {
 			return err
 		}
 	}

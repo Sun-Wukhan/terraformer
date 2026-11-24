@@ -27,7 +27,7 @@ import (
 )
 
 func OutputHclFiles(resources []terraformutils.Resource, provider terraformutils.ProviderGenerator, path string, serviceName string, isCompact bool, output string, sort bool) error {
-	if err := os.MkdirAll(path, os.ModePerm); err != nil {
+	if err := os.MkdirAll(path, 0o700); err != nil {
 		return err
 	}
 
@@ -143,10 +143,10 @@ func printFile(v []terraformutils.Resource, fileName, path, output string, sort 
 			continue
 		}
 		for fileName, content := range res.DataFiles {
-			if err := os.MkdirAll(path+"/data/", os.ModePerm); err != nil {
+			if err := os.MkdirAll(path+"/data/", 0o700); err != nil {
 				return err
 			}
-			err := os.WriteFile(path+"/data/"+fileName, content, os.ModePerm)
+			err := os.WriteFile(path+"/data/"+fileName, content, 0o600)
 			if err != nil {
 				return err
 			}
@@ -157,7 +157,7 @@ func printFile(v []terraformutils.Resource, fileName, path, output string, sort 
 	if err != nil {
 		return err
 	}
-	err = os.WriteFile(path+"/"+fileName+"."+GetFileExtension(output), tfFile, os.ModePerm)
+	err = os.WriteFile(path+"/"+fileName+"."+GetFileExtension(output), tfFile, 0o600)
 	if err != nil {
 		return err
 	}
@@ -166,7 +166,10 @@ func printFile(v []terraformutils.Resource, fileName, path, output string, sort 
 }
 
 func PrintFile(path string, data []byte) {
-	err := os.WriteFile(path, data, os.ModePerm)
+	// Generated config can embed credentials for providers that take
+	// them as configuration (e.g. keycloak's client_secret); keep every
+	// generated file owner-only rather than umask-dependent.
+	err := os.WriteFile(path, data, 0o600)
 	if err != nil {
 		log.Fatal(err)
 		return

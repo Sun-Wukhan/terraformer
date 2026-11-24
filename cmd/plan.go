@@ -113,11 +113,11 @@ func ExportPlanFile(plan *ImportPlan, path, filename string) error {
 	planfilePath := filepath.Join(path, filename)
 	log.Println("Saving planfile to", planfilePath)
 
-	if err := os.MkdirAll(path, os.ModePerm); err != nil {
+	if err := os.MkdirAll(path, 0o700); err != nil {
 		return err
 	}
 
-	f, err := os.OpenFile(planfilePath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, os.ModePerm)
+	f, err := os.OpenFile(planfilePath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		return err
 	}

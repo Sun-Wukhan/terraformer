@@ -313,7 +313,8 @@ func HclPrintResource(resources []Resource, providerData map[string]interface{},
 		}
 
 		if r[res.ResourceName] != nil {
-			log.Println(resources)
+			// Never log the resource objects themselves: their
+			// attributes can contain secret values.
 			log.Printf("[ERR]: duplicate resource found: %s.%s", res.InstanceInfo.Type, res.ResourceName)
 			continue
 		}
