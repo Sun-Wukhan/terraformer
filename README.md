@@ -57,6 +57,20 @@ Secrets are never asked for and never appear on the generated command
 line — the wizard tells you which environment variables to set instead
 (e.g. `VAULT_TOKEN`, `GRAFANA_AUTH`).
 
+The wizard also asks where the imported state should live afterwards:
+local files (the default), an HCP Terraform organization (one workspace
+per service directory — browse them at https://app.terraform.io), a GCS
+bucket, an S3 bucket, or your own HTTP backend. A remote choice adds a
+post-import step to the saved script that writes a `backend.tf` into
+every generated directory and migrates its state with
+`terraform init -migrate-state`:
+
+```bash
+./terraformer wizard --provider google --resources networks \
+  --projects my-project --backend hcp --backend-org my-org \
+  --script import.sh
+```
+
 ## What's new in the revival
 
 * **Modern provider support** — the provider layer now shells out to a real
